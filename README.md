@@ -14,6 +14,28 @@
 [![Swift 5](https://img.shields.io/badge/Swift-5-orange.svg)](https://swift.org)
 [![iOS 16+](https://img.shields.io/badge/iOS-16+-blue.svg)](https://developer.apple.com/ios/)
 
+---
+
+## What Can You Do?
+
+> "Ok Vision, what am I looking at?"
+
+| Use Case | Example |
+|----------|---------|
+| **Instant Translation** | Point at a menu or sign abroad and get real-time translation |
+| **Hands-Free Cooking** | "What's the next step?" while your hands are covered in dough |
+| **Smart Shopping** | "Is this a good deal?" - get price comparisons and reviews |
+| **Travel Guide** | "Tell me about this building" - instant history and facts |
+| **Accessibility** | Describe surroundings, read text aloud, identify objects |
+| **Meeting Assistant** | "Remember this person is John from Marketing" |
+| **Learning** | "What plant is this?" - identify flora, fauna, landmarks |
+| **DIY Helper** | "How do I fix this?" - show the problem, get step-by-step help |
+| **Fitness Coach** | "Is my form correct?" - real-time posture feedback |
+
+**With OpenClaw's 56+ tools:** Send emails, control smart home, set reminders, search the web - all hands-free through your glasses.
+
+---
+
 ## Features
 
 ### Dual AI Backend Support
