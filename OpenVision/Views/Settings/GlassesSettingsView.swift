@@ -12,6 +12,7 @@ struct GlassesSettingsView: View {
 
     @State private var isRegistering: Bool = false
     @State private var errorMessage: String?
+    @State private var showingUnregisterConfirmation: Bool = false
 
     // MARK: - Body
 
@@ -27,7 +28,7 @@ struct GlassesSettingsView: View {
                             .foregroundColor(.green)
                         Spacer()
                         Button("Unregister") {
-                            // TODO: Implement unregister
+                            showingUnregisterConfirmation = true
                         }
                         .foregroundColor(.red)
                         .font(.caption)
@@ -170,6 +171,29 @@ struct GlassesSettingsView: View {
         }
         .navigationTitle("Glasses")
         .navigationBarTitleDisplayMode(.inline)
+        .confirmationDialog(
+            "Unregister Glasses",
+            isPresented: $showingUnregisterConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Unregister", role: .destructive) {
+                Task {
+                    await glassesManager.unregister()
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This will disconnect your glasses from OpenVision. You'll need to re-register to use them again.")
+        }
+        .alert("Error", isPresented: .constant(glassesManager.errorMessage != nil)) {
+            Button("OK") {
+                glassesManager.errorMessage = nil
+            }
+        } message: {
+            if let error = glassesManager.errorMessage {
+                Text(error)
+            }
+        }
     }
 
     // MARK: - Methods

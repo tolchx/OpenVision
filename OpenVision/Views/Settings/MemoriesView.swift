@@ -29,7 +29,7 @@ struct MemoriesView: View {
                         Text("No memories yet")
                             .font(.headline)
 
-                        Text("The AI can add memories during conversations, or you can add them manually.")
+                        Text("Add memories manually to give the AI context about you.")
                             .font(.caption)
                             .foregroundColor(.secondary)
                             .multilineTextAlignment(.center)

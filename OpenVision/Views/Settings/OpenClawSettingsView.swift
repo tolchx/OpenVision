@@ -143,21 +143,23 @@ struct OpenClawSettingsView: View {
     }
 
     private func testConnection() {
+        // Save settings first so the service has the latest values
+        saveSettings()
+
         isTestingConnection = true
         connectionTestResult = nil
 
-        // TODO: Implement actual WebSocket connection test
-        // For now, simulate a test
         Task {
-            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            let result = await OpenClawService.shared.testConnection()
 
             await MainActor.run {
                 isTestingConnection = false
 
-                if gatewayURL.hasPrefix("wss://") || gatewayURL.hasPrefix("ws://") {
+                switch result {
+                case .success:
                     connectionTestResult = .success
-                } else {
-                    connectionTestResult = .failure("Invalid URL format. Use wss:// or ws://")
+                case .failure(let error):
+                    connectionTestResult = .failure(error.localizedDescription)
                 }
             }
         }

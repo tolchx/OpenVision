@@ -86,6 +86,28 @@ final class GlassesManager: ObservableObject {
         print("[GlassesManager] Registration initiated, waiting for Meta AI callback")
     }
 
+    /// Unregister app from Meta AI
+    func unregister() async {
+        print("[GlassesManager] Starting unregistration")
+
+        // Stop streaming first if active
+        if isStreaming {
+            await stopStreaming()
+        }
+
+        do {
+            try await wearables.startUnregistration()
+            isRegistered = false
+            connectedDevice = nil
+            connectedDeviceCount = 0
+            errorMessage = nil
+            print("[GlassesManager] Unregistration successful")
+        } catch {
+            errorMessage = "Unregister failed: \(error.localizedDescription)"
+            print("[GlassesManager] Unregistration error: \(error)")
+        }
+    }
+
     // MARK: - Streaming
 
     /// Start camera streaming from glasses

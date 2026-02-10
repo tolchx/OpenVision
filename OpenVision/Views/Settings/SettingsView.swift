@@ -31,20 +31,23 @@ struct SettingsView: View {
                         }
                     }
 
-                    NavigationLink {
-                        AdditionalInstructionsView()
-                    } label: {
-                        Label("Custom Instructions", systemImage: "text.quote")
-                    }
+                    // Only show for Gemini Live (OpenClaw has its own system prompt & memories)
+                    if settingsManager.settings.aiBackend == .geminiLive {
+                        NavigationLink {
+                            AdditionalInstructionsView()
+                        } label: {
+                            Label("Custom Instructions", systemImage: "text.quote")
+                        }
 
-                    NavigationLink {
-                        MemoriesView()
-                    } label: {
-                        HStack {
-                            Label("Memories", systemImage: "brain")
-                            Spacer()
-                            Text("\(settingsManager.settings.memories.count)")
-                                .foregroundColor(.secondary)
+                        NavigationLink {
+                            MemoriesView()
+                        } label: {
+                            HStack {
+                                Label("Memories", systemImage: "brain")
+                                Spacer()
+                                Text("\(settingsManager.settings.memories.count)")
+                                    .foregroundColor(.secondary)
+                            }
                         }
                     }
                 } header: {
