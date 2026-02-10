@@ -10,7 +10,7 @@ Be respectful, inclusive, and constructive. We welcome contributors of all skill
 
 ### Reporting Bugs
 
-1. Check [existing issues](https://github.com/user/OpenVision/issues) first
+1. Check [existing issues](https://github.com/rayl15/OpenVision/issues) first
 2. Create a new issue with:
    - Clear, descriptive title
    - Steps to reproduce
@@ -20,7 +20,7 @@ Be respectful, inclusive, and constructive. We welcome contributors of all skill
 
 ### Suggesting Features
 
-1. Check [existing discussions](https://github.com/user/OpenVision/discussions) first
+1. Check [existing discussions](https://github.com/rayl15/OpenVision/discussions) first
 2. Open a new discussion describing:
    - The problem you're trying to solve
    - Your proposed solution
@@ -272,7 +272,7 @@ Types:
 
 ## Questions?
 
-- Open a [Discussion](https://github.com/user/OpenVision/discussions)
+- Open a [Discussion](https://github.com/rayl15/OpenVision/discussions)
 - Check existing issues and PRs
 - Read `CLAUDE.md` for technical context
 

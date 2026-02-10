@@ -74,7 +74,7 @@ The open-source iOS app connecting Meta Ray-Ban smart glasses to AI assistants.
 ### Step 1: Clone & Configure
 
 ```bash
-git clone https://github.com/anthropics/OpenVision.git
+git clone https://github.com/rayl15/OpenVision.git
 cd OpenVision/meta-vision
 
 # Copy config templates

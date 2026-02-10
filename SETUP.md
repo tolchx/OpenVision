@@ -20,7 +20,7 @@ Complete step-by-step guide to set up and run OpenVision.
 ## Step 1: Clone the Repository
 
 ```bash
-git clone https://github.com/user/OpenVision.git
+git clone https://github.com/rayl15/OpenVision.git
 cd OpenVision/meta-vision
 ```
 

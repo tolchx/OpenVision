@@ -118,7 +118,7 @@ struct SettingsView: View {
                             .foregroundColor(.secondary)
                     }
 
-                    Link(destination: URL(string: "https://github.com/user/OpenVision")!) {
+                    Link(destination: URL(string: "https://github.com/rayl15/OpenVision")!) {
                         Label("GitHub Repository", systemImage: "link")
                     }
 
