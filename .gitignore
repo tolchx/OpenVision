@@ -67,5 +67,6 @@ playground.xcworkspace
 crashlytics-build.properties
 fabric.properties
 
-# Claude Code
-.claude/
+# Claude Code (keep instructions, ignore local settings)
+.claude/*
+!.claude/instructions.md
