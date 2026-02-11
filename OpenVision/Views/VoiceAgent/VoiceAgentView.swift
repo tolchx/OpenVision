@@ -16,6 +16,7 @@ struct VoiceAgentView: View {
     @StateObject private var geminiVision = GeminiVisionService.shared
     @StateObject private var geminiLive = GeminiLiveService.shared
     @StateObject private var ttsService = TTSService.shared
+    @StateObject private var soundService = SoundService.shared
     @StateObject private var audioCapture = AudioCaptureService()
     @StateObject private var audioPlayback = AudioPlaybackService()
 
@@ -142,6 +143,14 @@ struct VoiceAgentView: View {
                 } else {
                     agentState = .idle
                 }
+            }
+        }
+        // Control thinking sound based on agent state
+        .onChange(of: agentState) { newState in
+            if newState == .thinking || newState == .toolRunning {
+                soundService.startThinkingSound()
+            } else {
+                soundService.stopThinkingSound()
             }
         }
         // Observe VoiceCommandService state changes
@@ -577,6 +586,7 @@ struct VoiceAgentView: View {
         voiceCommandService.onWakeWordDetected = {
             print("[VoiceAgentView] Wake word detected!")
             HapticFeedback.medium()
+            self.soundService.playWakeWordSound()
 
             // If TTS is speaking, stop it immediately (interrupt)
             if self.ttsService.isSpeaking {

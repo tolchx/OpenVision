@@ -20,6 +20,9 @@
 		52E3A16AB6227CDA3D67817D /* AppSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2FD4A9B156D92B468B28864 /* AppSettings.swift */; };
 		587295A93FA82DEBB18139BB /* GlassCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01CC70E5327BD07B920833FC /* GlassCard.swift */; };
 		5C474A09B3067A8ACD7546C1 /* AudioCaptureService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2B78D6C28BEFF1F8426997C /* AudioCaptureService.swift */; };
+		5C474A09B3067A8ACD7546C2 /* SoundService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2B78D6C28BEFF1F8426997D /* SoundService.swift */; };
+		5C474A09B3067A8ACD7546C3 /* wake_word_ding.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = B2B78D6C28BEFF1F8426997E /* wake_word_ding.mp3 */; };
+		5C474A09B3067A8ACD7546C4 /* thinking_loop.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = B2B78D6C28BEFF1F8426997F /* thinking_loop.mp3 */; };
 		6878487E101CAC3A8BF651E9 /* AnimatedBackground.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41F6DCD4CB868C1A5711F96D /* AnimatedBackground.swift */; };
 		6F8F4FD14445FC3FE1A771D2 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 2410F1B11CD5A7070F3E7590 /* Assets.xcassets */; };
 		758F66B632E8A1CBDBB40094 /* OpenClawSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EAFCA981F220C3F978645D70 /* OpenClawSettingsView.swift */; };
@@ -75,6 +78,9 @@
 		ADCFF581A7AE50FBF35EA257 /* GeminiLiveService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeminiLiveService.swift; sourceTree = "<group>"; };
 		ADCFF581A7AE50FBF35EA258 /* GeminiVisionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeminiVisionService.swift; sourceTree = "<group>"; };
 		B2B78D6C28BEFF1F8426997C /* AudioCaptureService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioCaptureService.swift; sourceTree = "<group>"; };
+		B2B78D6C28BEFF1F8426997D /* SoundService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SoundService.swift; sourceTree = "<group>"; };
+		B2B78D6C28BEFF1F8426997E /* wake_word_ding.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = wake_word_ding.mp3; sourceTree = "<group>"; };
+		B2B78D6C28BEFF1F8426997F /* thinking_loop.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = thinking_loop.mp3; sourceTree = "<group>"; };
 		B2FD4A9B156D92B468B28864 /* AppSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppSettings.swift; sourceTree = "<group>"; };
 		C27052ECD2FFC79652B5CDB3 /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
 		C2B5A07D9F5C0579C275C597 /* VoiceCommandService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceCommandService.swift; sourceTree = "<group>"; };
@@ -289,6 +295,7 @@
 				B2B78D6C28BEFF1F8426997C /* AudioCaptureService.swift */,
 				529F4C0838CFE7F8F55E28E4 /* AudioPlaybackService.swift */,
 				3DA55F18F98C8B110680989C /* AudioSessionManager.swift */,
+				B2B78D6C28BEFF1F8426997D /* SoundService.swift */,
 			);
 			path = Audio;
 			sourceTree = "<group>";
@@ -314,7 +321,7 @@
 		D77F9080898B1259B3CAC33D /* Resources */ = {
 			isa = PBXGroup;
 			children = (
-				F279F8581FFE40A310A7156F /* {Sounds} */,
+				F279F8581FFE40A310A7156F /* Sounds */,
 				2410F1B11CD5A7070F3E7590 /* Assets.xcassets */,
 				E553EFA930E3B93EEA8F0AB6 /* Info.plist */,
 			);
@@ -330,11 +337,13 @@
 			);
 			sourceTree = "<group>";
 		};
-		F279F8581FFE40A310A7156F /* {Sounds} */ = {
+		F279F8581FFE40A310A7156F /* Sounds */ = {
 			isa = PBXGroup;
 			children = (
+				B2B78D6C28BEFF1F8426997E /* wake_word_ding.mp3 */,
+				B2B78D6C28BEFF1F8426997F /* thinking_loop.mp3 */,
 			);
-			path = "{Sounds}";
+			path = Sounds;
 			sourceTree = "<group>";
 		};
 		F5B2AD1E1FABED62439F7733 /* AIBackend */ = {
@@ -424,6 +433,8 @@
 			buildActionMask = 2147483647;
 			files = (
 				6F8F4FD14445FC3FE1A771D2 /* Assets.xcassets in Resources */,
+				5C474A09B3067A8ACD7546C3 /* wake_word_ding.mp3 in Resources */,
+				5C474A09B3067A8ACD7546C4 /* thinking_loop.mp3 in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -485,6 +496,7 @@
 				EF5319DFC76B8BD9A50EF195 /* OpenVisionApp.swift in Sources */,
 				F7718545E4E6BB4A7773B564 /* SettingsManager.swift in Sources */,
 				1EEA4B0E379A76881244FAB9 /* SettingsView.swift in Sources */,
+				5C474A09B3067A8ACD7546C2 /* SoundService.swift in Sources */,
 				C328DABCDFDF6531B38D4834 /* TTSService.swift in Sources */,
 				BFD9D5E86289F987AC6931B8 /* TranscriptBubble.swift in Sources */,
 				8BB3557D9BE4E9F2399BDBC1 /* VoiceAgentView.swift in Sources */,
