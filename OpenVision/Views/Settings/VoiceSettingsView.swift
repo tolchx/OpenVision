@@ -2,11 +2,22 @@
 // Voice control settings: wake word, conversation timeout
 
 import SwiftUI
+import AVFoundation
 
 struct VoiceSettingsView: View {
     // MARK: - Environment
 
     @EnvironmentObject var settingsManager: SettingsManager
+
+    // MARK: - Computed Properties
+
+    private var selectedVoiceName: String {
+        guard let identifier = settingsManager.settings.selectedVoiceIdentifier,
+              let voice = AVSpeechSynthesisVoice(identifier: identifier) else {
+            return "System Default"
+        }
+        return voice.name
+    }
 
     // MARK: - Body
 
@@ -55,6 +66,24 @@ struct VoiceSettingsView: View {
                 Text("Conversation")
             } footer: {
                 Text("Automatically end the conversation after this period of silence.")
+            }
+
+            // TTS Voice Section
+            Section {
+                NavigationLink {
+                    VoiceSelectionView()
+                } label: {
+                    HStack {
+                        Text("TTS Voice")
+                        Spacer()
+                        Text(selectedVoiceName)
+                            .foregroundColor(.secondary)
+                    }
+                }
+            } header: {
+                Text("Output Voice")
+            } footer: {
+                Text("Choose the voice used for AI responses in OpenClaw mode.")
             }
 
             // Feedback Section

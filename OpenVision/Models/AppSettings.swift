@@ -66,6 +66,9 @@ struct AppSettings: Codable, Equatable {
     /// Conversation timeout in seconds (auto-end after silence)
     var conversationTimeout: TimeInterval = 30
 
+    /// Selected TTS voice identifier (nil = system default)
+    var selectedVoiceIdentifier: String? = nil
+
     // MARK: - AI Customization
 
     /// Custom instructions appended to AI system prompt

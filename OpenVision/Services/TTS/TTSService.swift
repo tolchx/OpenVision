@@ -2,6 +2,7 @@
 // Text-to-speech service using AVSpeechSynthesizer
 
 import AVFoundation
+import Foundation
 
 /// Text-to-speech service for OpenClaw mode
 @MainActor
@@ -29,25 +30,37 @@ final class TTSService: NSObject, ObservableObject {
     // MARK: - Voice Selection
 
     private var selectedVoice: AVSpeechSynthesisVoice? {
-        // Try to get premium/enhanced voice first
-        let voices = AVSpeechSynthesisVoice.speechVoices()
-
-        // Prefer premium voices
-        if let premium = voices.first(where: {
-            $0.language.hasPrefix("en") && $0.quality == .premium
-        }) {
-            return premium
+        // Check if user has selected a specific voice
+        if let identifier = SettingsManager.shared.settings.selectedVoiceIdentifier,
+           let voice = AVSpeechSynthesisVoice(identifier: identifier) {
+            return voice
         }
 
-        // Fall back to enhanced
-        if let enhanced = voices.first(where: {
-            $0.language.hasPrefix("en") && $0.quality == .enhanced
-        }) {
-            return enhanced
-        }
-
-        // Fall back to default English
+        // Fall back to default English voice
         return AVSpeechSynthesisVoice(language: "en-US")
+    }
+
+    /// Get all available voices for a language
+    static func availableVoices(for languageCode: String = "en") -> [AVSpeechSynthesisVoice] {
+        return AVSpeechSynthesisVoice.speechVoices()
+            .filter { $0.language.hasPrefix(languageCode) }
+            .sorted { v1, v2 in
+                // Sort by quality (premium first), then by name
+                if v1.quality != v2.quality {
+                    return v1.quality.rawValue > v2.quality.rawValue
+                }
+                return v1.name < v2.name
+            }
+    }
+
+    /// Get display name for a voice quality
+    static func qualityDisplayName(_ quality: AVSpeechSynthesisVoiceQuality) -> String {
+        switch quality {
+        case .default: return "Default"
+        case .enhanced: return "Enhanced"
+        case .premium: return "Premium"
+        @unknown default: return "Unknown"
+        }
     }
 
     // MARK: - Initialization
