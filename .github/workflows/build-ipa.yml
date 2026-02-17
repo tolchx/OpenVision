@@ -10,7 +10,7 @@ on:
 
 jobs:
   build:
-    runs-on: macos-15
+    runs-on: macos-latest
 
     steps:
       - name: Checkout code
@@ -60,8 +60,14 @@ jobs:
           echo "--- Config.swift contents ---"
           cat OpenVision/Config/Config.swift
 
-      - name: Generate Xcode project
-        run: xcodegen generate
+      - name: Remove old Xcode project (incompatible format v77)
+        run: rm -rf OpenVision.xcodeproj
+
+      - name: Generate fresh Xcode project via xcodegen
+        run: |
+          xcodegen generate
+          echo "--- Generated project format ---"
+          head -5 OpenVision.xcodeproj/project.pbxproj
 
       - name: Resolve Swift Package dependencies
         run: |
