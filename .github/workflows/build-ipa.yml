@@ -1,0 +1,86 @@
+name: Build OpenVision IPA
+
+on:
+  workflow_dispatch:
+    inputs:
+      bundle_id:
+        description: 'Bundle Identifier (e.g. com.yourname.openvision)'
+        required: false
+        default: 'com.openvision.app'
+
+jobs:
+  build:
+    runs-on: macos-14
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Select Xcode 15
+        run: sudo xcode-select -s /Applications/Xcode_15.4.app/Contents/Developer
+
+      - name: Install xcodegen
+        run: brew install xcodegen
+
+      - name: Create Config.xcconfig
+        run: |
+          cat > Config.xcconfig << EOF
+          DEVELOPMENT_TEAM = TEMPORARY
+          PRODUCT_BUNDLE_IDENTIFIER = ${{ github.event.inputs.bundle_id }}
+          META_APP_ID = ${{ secrets.META_APP_ID }}
+          CLIENT_TOKEN = ${{ secrets.CLIENT_TOKEN }}
+          APP_LINK_URL_SCHEME = openvision
+          EOF
+
+      - name: Create Config.swift
+        run: |
+          cat > OpenVision/Config/Config.swift << 'SWIFT_EOF'
+          import Foundation
+
+          enum Config {
+              static let defaultOpenClawGatewayURL = ""
+              static let defaultOpenClawAuthToken = ""
+              static let defaultGeminiAPIKey = ""
+              static let appVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
+              static let buildNumber = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "1"
+          }
+          SWIFT_EOF
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Resolve Swift Package dependencies
+        run: |
+          xcodebuild -resolvePackageDependencies \
+            -scheme OpenVision \
+            -project OpenVision.xcodeproj
+
+      - name: Build for iOS device (unsigned)
+        run: |
+          xcodebuild build \
+            -scheme OpenVision \
+            -project OpenVision.xcodeproj \
+            -destination 'generic/platform=iOS' \
+            -configuration Release \
+            CODE_SIGN_IDENTITY="-" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            AD_HOC_CODE_SIGNING_ALLOWED=YES \
+            DEVELOPMENT_TEAM="" \
+            -derivedDataPath ./DerivedData
+
+      - name: Package IPA
+        run: |
+          mkdir -p Payload
+          APP_PATH=$(find ./DerivedData -name "OpenVision.app" -type d | head -1)
+          echo "Found app at: $APP_PATH"
+          cp -r "$APP_PATH" Payload/
+          zip -r OpenVision.ipa Payload/
+          echo "IPA size: $(du -h OpenVision.ipa | cut -f1)"
+
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: OpenVision-IPA
+          path: OpenVision.ipa
+          retention-days: 30
