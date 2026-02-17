@@ -30,18 +30,17 @@ jobs:
         run: brew install xcodegen
 
       - name: Create Config.xcconfig
+        env:
+          BUNDLE_ID: ${{ github.event.inputs.bundle_id }}
+          META_ID: ${{ secrets.META_APP_ID }}
+          CL_TOKEN: ${{ secrets.CLIENT_TOKEN }}
         run: |
-          cat > Config.xcconfig << 'XCEOF'
-          DEVELOPMENT_TEAM = TEMPORARY
-          PRODUCT_BUNDLE_IDENTIFIER = com.openvision.app
-          META_APP_ID = 000000000
-          CLIENT_TOKEN = AR|000000000|temporary
-          APP_LINK_URL_SCHEME = openvision
-          XCEOF
-          sed -i '' "s/PRODUCT_BUNDLE_IDENTIFIER = .*/PRODUCT_BUNDLE_IDENTIFIER = ${{ github.event.inputs.bundle_id }}/" Config.xcconfig
-          sed -i '' "s/META_APP_ID = .*/META_APP_ID = ${{ secrets.META_APP_ID }}/" Config.xcconfig
-          sed -i '' "s|CLIENT_TOKEN = .*|CLIENT_TOKEN = ${{ secrets.CLIENT_TOKEN }}|" Config.xcconfig
-          echo "--- Config.xcconfig contents ---"
+          printf "DEVELOPMENT_TEAM = TEMPORARY\n" > Config.xcconfig
+          printf "PRODUCT_BUNDLE_IDENTIFIER = %s\n" "$BUNDLE_ID" >> Config.xcconfig
+          printf "META_APP_ID = %s\n" "$META_ID" >> Config.xcconfig
+          printf "CLIENT_TOKEN = %s\n" "$CL_TOKEN" >> Config.xcconfig
+          printf "APP_LINK_URL_SCHEME = openvision\n" >> Config.xcconfig
+          echo "--- Config.xcconfig created ---"
           cat Config.xcconfig
 
       - name: Create Config.swift
