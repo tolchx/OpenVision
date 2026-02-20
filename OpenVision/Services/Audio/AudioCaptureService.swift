@@ -67,7 +67,8 @@ final class AudioCaptureService: ObservableObject {
         inputNode.installTap(onBus: 0, bufferSize: 1024, format: nativeFormat) { [weak self] buffer, _ in
             self?.processAudioBuffer(buffer, nativeFormat: nativeFormat)
         }
-
+        do {
+            try engine.start()
         } catch {
             print("[AudioCapture] ERROR starting engine: \(error.localizedDescription)")
             // Clean up
