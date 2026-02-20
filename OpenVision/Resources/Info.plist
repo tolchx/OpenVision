@@ -123,6 +123,11 @@
     <key>NSLocationWhenInUseUsageDescription</key>
     <string>OpenVision can use your location to provide location-aware responses.</string>
 
+    <!-- Local Network for Wi-Fi direct connection to glasses -->
+    <key>NSLocalNetworkUsageDescription</key>
+    <string>OpenVision needs to access your local network to establish a Wi-Fi connection with your Meta Ray-Ban glasses for video streaming.</string>
+
+
     <!-- App Transport Security (allow WebSocket connections) -->
     <key>NSAppTransportSecurity</key>
     <dict>
