@@ -46,9 +46,13 @@ final class AudioPlaybackService: ObservableObject {
         let outputFormat = engine.outputNode.outputFormat(forBus: 0)
 
         engine.connect(player, to: engine.mainMixerNode, format: outputFormat)
-
-        try engine.start()
-        print("[AudioPlayback] Engine started")
+        do {
+            try engine.start()
+            print("[AudioPlayback] Engine started successfully")
+        } catch {
+            print("[AudioPlayback] ERROR starting engine: \(error.localizedDescription)")
+            throw error
+        }
     }
 
     /// Teardown audio engine

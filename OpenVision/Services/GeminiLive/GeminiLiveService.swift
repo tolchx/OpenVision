@@ -342,7 +342,10 @@ final class GeminiLiveService: ObservableObject {
                     await self.handleMessage(message)
                 } catch {
                     if !Task.isCancelled {
-                        print("[GeminiLive] Receive error: \(error)")
+                        print("[GeminiLive] Receive error (WebSocket dropped): \(error.localizedDescription)")
+                        if let nsError = error as NSError? {
+                            print("[GeminiLive] Error domain: \(nsError.domain), code: \(nsError.code)")
+                        }
                         await self.handleDisconnect()
                     }
                     break
@@ -385,8 +388,15 @@ final class GeminiLiveService: ObservableObject {
         }
 
         // Go away (server closing connection)
-        if json["goAway"] != nil {
-            print("[GeminiLive] Server requested disconnect")
+        if let goAway = json["goAway"] as? [String: Any] {
+            print("[GeminiLive] Server requested disconnect with reason: \(goAway)")
+            await handleDisconnect()
+            return
+        }
+        
+        // Error from server
+        if let error = json["error"] as? [String: Any] {
+            print("[GeminiLive] Server sent error: \(error)")
             await handleDisconnect()
             return
         }
