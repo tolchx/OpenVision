@@ -879,6 +879,11 @@ struct VoiceAgentView: View {
         // Stop TTS if speaking
         ttsService.stop()
 
+        // BUGFIX: Wait for AVAudioSession to stabilize the Bluetooth HFP route
+        // before asking MWDAT to negotiate the Wi-Fi direct video stream.
+        // Without this delay, iOS interrupts the Wi-Fi handshake, causing Error 4.
+        try? await Task.sleep(nanoseconds: 1_500_000_000)
+
         // Start glasses streaming
         if !glassesManager.isStreaming {
             await glassesManager.startStreaming()
