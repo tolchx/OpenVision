@@ -142,7 +142,7 @@
         <key>ClientToken</key>
         <string>$(CLIENT_TOKEN)</string>
         <key>TeamID</key>
-        <string>$(DEVELOPMENT_TEAM)</string>
+        <string>$(META_TEAM_ID)</string>
     </dict>
 
     <!-- Appearance -->
