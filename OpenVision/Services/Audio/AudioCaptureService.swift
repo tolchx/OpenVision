@@ -97,6 +97,15 @@ final class AudioCaptureService: ObservableObject {
         print("[AudioCapture] Stopped capturing")
     }
 
+    // MARK: - External Buffer Processing
+
+    /// Process an audio buffer from an external source (e.g. VoiceCommandService's engine).
+    /// This allows reusing an existing AVAudioEngine without creating a new one,
+    /// which avoids disrupting the Meta SDK's Wi-Fi Direct camera stream.
+    func processExternalBuffer(_ buffer: AVAudioPCMBuffer, nativeFormat: AVAudioFormat) {
+        processAudioBuffer(buffer, nativeFormat: nativeFormat)
+    }
+
     // MARK: - Audio Processing
 
     /// Process audio buffer from tap

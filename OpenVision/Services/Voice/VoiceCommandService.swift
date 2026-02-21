@@ -206,7 +206,96 @@ final class VoiceCommandService: ObservableObject {
         state = .idle
         currentTranscription = ""
         hasSpokenThisTurn = false
+        geminiAudioHandler = nil
+        isPausedForGemini = false
         print("[VoiceCommand] Stopped listening")
+    }
+
+    // MARK: - Gemini Live Pause/Resume
+
+    /// Handler for redirecting audio to Gemini Live
+    private var geminiAudioHandler: ((AVAudioPCMBuffer) -> Void)?
+    /// Whether we're paused for Gemini Live mode
+    private(set) var isPausedForGemini = false
+
+    /// Pause recognition but keep engine running, redirect audio to Gemini Live.
+    /// This avoids tearing down/recreating AVAudioEngine which disrupts
+    /// the Meta SDK's Wi-Fi Direct camera stream.
+    func pauseForGeminiLive(audioHandler: @escaping (AVAudioPCMBuffer) -> Void) {
+        guard isListening, let engine = audioEngine else {
+            print("[VoiceCommand] Not listening, can't pause for Gemini")
+            return
+        }
+
+        print("[VoiceCommand] Pausing recognition for Gemini Live (engine stays running)")
+
+        // Cancel speech recognition but keep engine running
+        recognitionTask?.cancel()
+        recognitionTask = nil
+        recognitionRequest?.endAudio()
+        recognitionRequest = nil
+
+        // Cancel timers
+        silenceTimer?.invalidate()
+        silenceTimer = nil
+        commandTimeoutTimer?.invalidate()
+        commandTimeoutTimer = nil
+        conversationTimeoutTimer?.invalidate()
+        conversationTimeoutTimer = nil
+
+        // Remove old tap and install new one that sends audio to Gemini
+        let inputNode = engine.inputNode
+        inputNode.removeTap(onBus: 0)
+
+        let recordingFormat = inputNode.outputFormat(forBus: 0)
+        self.geminiAudioHandler = audioHandler
+
+        inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { [weak self] buffer, _ in
+            self?.geminiAudioHandler?(buffer)
+        }
+
+        isPausedForGemini = true
+        state = .idle
+        currentTranscription = ""
+        print("[VoiceCommand] Audio now redirected to Gemini Live")
+    }
+
+    /// Resume normal voice command recognition after Gemini Live mode ends.
+    func resumeFromGeminiLive() {
+        guard isPausedForGemini, let engine = audioEngine else {
+            print("[VoiceCommand] Not in Gemini pause state")
+            return
+        }
+
+        print("[VoiceCommand] Resuming normal recognition from Gemini Live pause")
+
+        // Remove Gemini tap
+        let inputNode = engine.inputNode
+        inputNode.removeTap(onBus: 0)
+        geminiAudioHandler = nil
+        isPausedForGemini = false
+
+        // Reinstall recognition tap
+        recognitionRequest = SFSpeechAudioBufferRecognitionRequest()
+        guard let recognitionRequest = recognitionRequest else { return }
+
+        recognitionRequest.shouldReportPartialResults = true
+        recognitionRequest.taskHint = .dictation
+
+        let recordingFormat = inputNode.outputFormat(forBus: 0)
+        inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { buffer, _ in
+            recognitionRequest.append(buffer)
+        }
+
+        // Start new recognition task
+        recognitionTask = speechRecognizer?.recognitionTask(with: recognitionRequest) { [weak self] result, error in
+            Task { @MainActor in
+                self?.handleRecognitionResult(result: result, error: error)
+            }
+        }
+
+        state = .waitingForWakeWord
+        print("[VoiceCommand] Recognition restored")
     }
 
     /// Enter conversation mode (no wake word needed for follow-ups)

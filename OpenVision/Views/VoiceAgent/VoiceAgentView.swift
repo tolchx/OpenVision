@@ -873,31 +873,21 @@ struct VoiceAgentView: View {
 
         print("[VoiceAgentView] Starting live video mode...")
 
-        // Stop VoiceCommandService - Gemini will handle audio directly
-        voiceCommandService.stopListening()
-
-        // Stop TTS if speaking
+        // Stop TTS if speaking (does NOT touch audio engine)
         ttsService.stop()
 
-        // Start glasses streaming (camera first, as per original design)
+        // Start glasses streaming FIRST — no audio changes yet
         if !glassesManager.isStreaming {
             await glassesManager.startStreaming()
         }
 
-        // Connect to Gemini Live
+        // Connect to Gemini Live WebSocket
         do {
             try await geminiLive.connect()
         } catch {
             errorMessage = "Failed to connect to Gemini Live: \(error.localizedDescription)"
-            // Cleanup: stop streaming and restart voice commands
             if glassesManager.isStreaming {
                 await glassesManager.stopStreaming()
-            }
-            do {
-                try voiceCommandService.startListening()
-                voiceCommandService.enterConversationMode()
-            } catch {
-                print("[VoiceAgentView] Failed to restart voice commands: \(error)")
             }
             return
         }
@@ -905,31 +895,27 @@ struct VoiceAgentView: View {
         // Setup Gemini Live callbacks
         setupGeminiLiveCallbacks()
 
-        // Setup audio capture → Gemini Live
-        audioCapture.onAudioCaptured = { [weak geminiLive] data in
-            geminiLive?.sendAudio(data: data)
-        }
-
-        // Setup audio playback
+        // Setup audio playback for Gemini responses
         do {
             try audioPlayback.setup()
         } catch {
             print("[VoiceAgentView] Failed to setup audio playback: \(error)")
         }
 
-        // Start audio capture
-        do {
-            try audioCapture.startCapture()
-        } catch {
-            errorMessage = "Failed to start audio capture: \(error.localizedDescription)"
-            await geminiLive.disconnect()
-            do {
-                try voiceCommandService.startListening()
-                voiceCommandService.enterConversationMode()
-            } catch {
-                print("[VoiceAgentView] Failed to restart voice commands: \(error)")
-            }
-            return
+        // CRITICAL: Instead of stopping VoiceCommandService and creating a new
+        // AudioCaptureService engine (which disrupts Wi-Fi Direct), we PAUSE
+        // recognition and redirect the EXISTING audio engine tap to Gemini.
+        // This keeps AVAudioSession stable → camera stream stays alive.
+        audioCapture.onAudioCaptured = { [weak geminiLive] data in
+            geminiLive?.sendAudio(data: data)
+        }
+
+        voiceCommandService.pauseForGeminiLive { [weak self] buffer in
+            // Feed raw AVAudioPCMBuffer into AudioCaptureService's processor
+            // which handles resampling to 16kHz PCM16 mono + chunking
+            guard let self = self else { return }
+            let format = buffer.format
+            self.audioCapture.processExternalBuffer(buffer, nativeFormat: format)
         }
 
         // Setup video frame routing to Gemini Live
@@ -943,8 +929,6 @@ struct VoiceAgentView: View {
         agentState = .liveVideo
 
         print("[VoiceAgentView] ✓ Live video mode active - Gemini handling audio + video")
-
-        // Announce to user
         ttsService.speak("Live video mode active")
     }
 
@@ -957,8 +941,7 @@ struct VoiceAgentView: View {
 
         print("[VoiceAgentView] Stopping live video mode...")
 
-        // Stop audio capture
-        audioCapture.stopCapture()
+        // Stop sending audio to Gemini (but don't touch engine)
         audioCapture.onAudioCaptured = nil
 
         // Stop audio playback
@@ -980,19 +963,17 @@ struct VoiceAgentView: View {
         isLiveVideoMode = false
         agentState = isSessionActive ? .listening : .idle
 
-        // Always restart VoiceCommandService for wake word detection
-        do {
-            try voiceCommandService.startListening()
-            if isSessionActive {
-                // Continue conversation mode if session was active
-                voiceCommandService.enterConversationMode()
-                print("[VoiceAgentView] Restarted voice commands in conversation mode")
-            } else {
-                // Just listen for wake word
-                print("[VoiceAgentView] Restarted voice commands for wake word detection")
+        // Resume VoiceCommandService recognition (engine was never stopped)
+        if voiceCommandService.isPausedForGemini {
+            voiceCommandService.resumeFromGeminiLive()
+            print("[VoiceAgentView] Restored voice command recognition")
+        } else {
+            // Fallback: restart from scratch if needed
+            do {
+                try voiceCommandService.startListening()
+            } catch {
+                print("[VoiceAgentView] Failed to restart voice commands: \(error)")
             }
-        } catch {
-            print("[VoiceAgentView] Failed to restart voice commands: \(error)")
         }
 
         print("[VoiceAgentView] Live video mode stopped - back to OpenClaw")
