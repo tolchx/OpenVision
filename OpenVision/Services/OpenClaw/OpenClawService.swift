@@ -159,7 +159,7 @@ final class OpenClawService: ObservableObject {
             stopHeartbeat()
             cancelReconnect()
             closeWebSocket()
-            failPendingRequests(error: AIBackendError.connectionFailed)
+            failPendingRequests(error: AIBackendError.connectionFailed("Max reconnection attempts reached"))
             onDisconnected?()
 
         case .connecting:

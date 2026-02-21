@@ -21,6 +21,9 @@ final class GeminiLiveService: ObservableObject {
     @Published var isModelSpeaking: Bool = false
     @Published var lastError: String?
 
+    /// Last raw message from server (for debugging)
+    @Published var lastServerMessage: String?
+
     // MARK: - Configuration
 
     private var apiKey: String {
@@ -115,7 +118,8 @@ final class GeminiLiveService: ObservableObject {
             }
 
             guard isSetupComplete else {
-                throw AIBackendError.connectionFailed
+                let detail = lastServerMessage ?? "No response from server (setup timed out)"
+                throw AIBackendError.connectionFailed(detail)
             }
 
             connectionState = .connected
@@ -347,6 +351,9 @@ final class GeminiLiveService: ObservableObject {
         if let rawString = String(data: data, encoding: .utf8) {
             let preview = rawString.count > 500 ? String(rawString.prefix(500)) + "..." : rawString
             print("[GeminiLive] RAW message: \(preview)")
+            await MainActor.run {
+                self.lastServerMessage = preview
+            }
         }
         
         guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {

@@ -61,7 +61,7 @@ enum AIConnectionState: Equatable, CustomStringConvertible {
 enum AIBackendError: LocalizedError {
     case notConfigured
     case notConnected
-    case connectionFailed
+    case connectionFailed(String)
     case connectionTimeout
     case invalidResponse
     case requestFailed(String)
@@ -70,7 +70,7 @@ enum AIBackendError: LocalizedError {
         switch self {
         case .notConfigured: return "AI backend not configured"
         case .notConnected: return "Not connected to AI backend"
-        case .connectionFailed: return "Failed to connect to AI backend"
+        case .connectionFailed(let detail): return "Failed to connect: \(detail)"
         case .connectionTimeout: return "Connection timed out"
         case .invalidResponse: return "Invalid response from AI backend"
         case .requestFailed(let msg): return "Request failed: \(msg)"
