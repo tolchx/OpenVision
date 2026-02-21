@@ -294,7 +294,7 @@ final class VoiceCommandService: ObservableObject {
             }
         }
 
-        state = .waitingForWakeWord
+        state = .idle
         print("[VoiceCommand] Recognition restored")
     }
 

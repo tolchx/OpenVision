@@ -910,10 +910,9 @@ struct VoiceAgentView: View {
             geminiLive?.sendAudio(data: data)
         }
 
-        voiceCommandService.pauseForGeminiLive { [weak self] buffer in
+        voiceCommandService.pauseForGeminiLive { buffer in
             // Feed raw AVAudioPCMBuffer into AudioCaptureService's processor
             // which handles resampling to 16kHz PCM16 mono + chunking
-            guard let self = self else { return }
             let format = buffer.format
             self.audioCapture.processExternalBuffer(buffer, nativeFormat: format)
         }
