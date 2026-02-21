@@ -445,33 +445,25 @@ struct VoiceAgentView: View {
                     // User says "take a photo" → captureAndSendPhoto() starts streaming on-demand
 
                 case .geminiLive:
-                    try await GeminiLiveService.shared.connect()
-                    // Start glasses streaming for Gemini Live mode
-                    if glassesManager.isRegistered && !glassesManager.isStreaming {
-                        print("[VoiceAgentView] Starting glasses stream for Gemini Live...")
-                        await glassesManager.startStreaming()
-                    }
-
-                    // Gemini Live also needs video streaming
-                    if glassesManager.isRegistered && !glassesManager.isStreaming {
-                        print("[VoiceAgentView] Starting glasses stream for Gemini Live...")
-                        await glassesManager.startStreaming()
-                    }
+                    // Gemini Live needs the FULL pipeline: connect + audio + video
+                    // startLiveVideoMode() handles everything
+                    await startLiveVideoMode()
                 }
 
-                agentState = .listening
+                agentState = isLiveVideoMode ? .liveVideo : .listening
                 userTranscript = ""
                 aiTranscript = ""
 
-                // Start voice command listening for speech capture
-                if voiceCommandService.authorizationStatus == .authorized {
-                    if !voiceCommandService.isListening {
-                        try? voiceCommandService.startListening()
+                // Start voice command listening for speech capture (OpenClaw mode only)
+                if settingsManager.settings.aiBackend == .openClaw {
+                    if voiceCommandService.authorizationStatus == .authorized {
+                        if !voiceCommandService.isListening {
+                            try? voiceCommandService.startListening()
+                        }
+                        voiceCommandService.enterConversationMode()
+                    } else {
+                        errorMessage = "Speech recognition not authorized"
                     }
-                    // Put in listening mode (not waiting for wake word)
-                    voiceCommandService.enterConversationMode()
-                } else {
-                    errorMessage = "Speech recognition not authorized"
                 }
 
             } catch {
