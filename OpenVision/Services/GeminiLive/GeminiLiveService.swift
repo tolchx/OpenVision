@@ -180,23 +180,11 @@ final class GeminiLiveService: ObservableObject {
                     "parts": [
                         ["text": buildSystemPrompt()]
                     ]
-                ],
-                "realtimeInputConfig": [
-                    "automaticActivityDetection": [
-                        "disabled": false,
-                        "startOfSpeechSensitivity": "START_SENSITIVITY_HIGH",
-                        "endOfSpeechSensitivity": "END_SENSITIVITY_LOW",
-                        "prefixPaddingMs": 40,
-                        "silenceDurationMs": 500
-                    ],
-                    "activityHandling": "START_OF_ACTIVITY_INTERRUPTS",
-                    "turnCoverage": "TURN_INCLUDES_ALL_INPUT"
-                ],
-                "inputAudioTranscription": [:] as [String: Any],
-                "outputAudioTranscription": [:] as [String: Any]
+                ]
             ]
         ]
 
+        print("[GeminiLive] Sending setup: \(Constants.GeminiLive.modelName)")
         try await sendJSON(setup)
     }
 
@@ -353,8 +341,16 @@ final class GeminiLiveService: ObservableObject {
 
     /// Handle incoming message
     private func handleMessage(_ message: URLSessionWebSocketTask.Message) async {
-        guard let data = extractData(from: message),
-              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+        guard let data = extractData(from: message) else { return }
+        
+        // Log raw message for debugging
+        if let rawString = String(data: data, encoding: .utf8) {
+            let preview = rawString.count > 500 ? String(rawString.prefix(500)) + "..." : rawString
+            print("[GeminiLive] RAW message: \(preview)")
+        }
+        
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            print("[GeminiLive] Failed to parse JSON from message")
             return
         }
 

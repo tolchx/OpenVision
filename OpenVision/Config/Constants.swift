@@ -30,7 +30,7 @@ enum Constants {
         static let websocketEndpoint = "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent"
 
         /// Model name (stable model for Gemini Live API)
-        static let modelName = "models/gemini-2.0-flash-live-001"
+        static let modelName = "models/gemini-2.5-flash-native-audio-preview-12-2025"
 
         /// Input audio sample rate (Hz)
         static let inputSampleRate = 16000
