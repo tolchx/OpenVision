@@ -1,5 +1,6 @@
 // OpenVision - GeminiLiveService.swift
 // WebSocket client for Google Gemini Live API with native audio
+// Architecture based on VisionClaw's proven working implementation
 
 import Foundation
 import AVFoundation
@@ -8,6 +9,12 @@ import AVFoundation
 ///
 /// Connects to Gemini Live API for real-time voice + vision AI.
 /// Handles bidirectional audio streaming and video frame transmission.
+///
+/// Key architectural decisions (matching VisionClaw):
+/// - Uses URLSessionWebSocketDelegate for proper connection lifecycle
+/// - Sends setup inside onOpen callback (not via polling)
+/// - Uses dedicated sendQueue for thread-safe message sending
+/// - Sends JSON as .string (not .data)
 @MainActor
 final class GeminiLiveService: ObservableObject {
     // MARK: - Singleton
@@ -20,9 +27,6 @@ final class GeminiLiveService: ObservableObject {
     @Published var isProcessing: Bool = false
     @Published var isModelSpeaking: Bool = false
     @Published var lastError: String?
-
-    /// Last raw message from server (for debugging)
-    @Published var lastServerMessage: String?
 
     // MARK: - Configuration
 
@@ -46,10 +50,14 @@ final class GeminiLiveService: ObservableObject {
 
     // MARK: - WebSocket
 
-    private var webSocket: URLSessionWebSocketTask?
+    private var webSocketTask: URLSessionWebSocketTask?
     private var urlSession: URLSession?
+    private let delegate = WebSocketDelegate()
     private var receiveTask: Task<Void, Never>?
-    private var isSetupComplete: Bool = false
+    private var connectContinuation: CheckedContinuation<Bool, Never>?
+
+    /// Dedicated queue for sending messages (thread safety)
+    private let sendQueue = DispatchQueue(label: "openvision.gemini.send", qos: .userInitiated)
 
     // MARK: - Video Throttling
 
@@ -61,14 +69,20 @@ final class GeminiLiveService: ObservableObject {
     // MARK: - Latency Tracking
 
     private var lastUserSpeechEnd: Date?
+    private var responseLatencyLogged = false
 
     // MARK: - Initialization
 
-    private init() {}
+    private init() {
+        let config = URLSessionConfiguration.default
+        config.timeoutIntervalForRequest = 30
+        self.urlSession = URLSession(configuration: config, delegate: delegate, delegateQueue: nil)
+    }
 
     // MARK: - Connection
 
     /// Connect to Gemini Live API
+    /// Returns true if connection + setup succeeded (matches VisionClaw's pattern)
     func connect() async throws {
         guard !apiKey.isEmpty else {
             throw AIBackendError.notConfigured
@@ -80,59 +94,79 @@ final class GeminiLiveService: ObservableObject {
         connectionState = .connecting
         onConnectionStateChanged?(connectionState)
 
-        do {
-            let url = buildWebSocketURL()
-
-            let config = URLSessionConfiguration.default
-            config.timeoutIntervalForRequest = 30
-
-            urlSession = URLSession(configuration: config)
-            webSocket = urlSession?.webSocketTask(with: url)
-            webSocket?.resume()
-
-            startReceiving()
-
-            // Wait for connection
-            var connected = false
-            for _ in 0..<15 {
-                if webSocket?.state == .running {
-                    connected = true
-                    break
-                }
-                try? await Task.sleep(nanoseconds: 200_000_000)
-            }
-
-            guard connected else {
-                throw AIBackendError.connectionTimeout
-            }
-
-            // Send setup message
-            try await sendSetup()
-
-            // Wait for setup complete
-            for _ in 0..<50 {
-                if isSetupComplete {
-                    break
-                }
-                try? await Task.sleep(nanoseconds: 100_000_000)
-            }
-
-            guard isSetupComplete else {
-                let detail = lastServerMessage ?? "No response from server (setup timed out)"
-                throw AIBackendError.connectionFailed(detail)
-            }
-
-            connectionState = .connected
-            onConnectionStateChanged?(connectionState)
-            print("[GeminiLive] Connected")
-
-        } catch {
-            lastError = error.localizedDescription
-            connectionState = .failed(error.localizedDescription)
-            onConnectionStateChanged?(connectionState)
-            closeWebSocket()
-            throw error
+        guard let url = buildWebSocketURL() else {
+            throw AIBackendError.notConfigured
         }
+
+        // Use CheckedContinuation resolved by delegate callbacks (VisionClaw pattern)
+        let success = await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
+            self.connectContinuation = continuation
+
+            // Wire delegate callbacks
+            self.delegate.onOpen = { [weak self] protocol_ in
+                guard let self else { return }
+                Task { @MainActor in
+                    print("[GeminiLive] WebSocket opened, sending setup...")
+                    // Send setup immediately when WS is truly open
+                    self.sendSetupMessage()
+                    self.startReceiving()
+                }
+            }
+
+            self.delegate.onClose = { [weak self] code, reason in
+                guard let self else { return }
+                let reasonStr = reason.flatMap { String(data: $0, encoding: .utf8) } ?? "no reason"
+                print("[GeminiLive] WebSocket closed: code=\(code.rawValue), reason=\(reasonStr)")
+                Task { @MainActor in
+                    self.resolveConnect(success: false)
+                    self.connectionState = .disconnected
+                    self.isModelSpeaking = false
+                    self.onConnectionStateChanged?(self.connectionState)
+                    self.onDisconnected?()
+                }
+            }
+
+            self.delegate.onError = { [weak self] error in
+                guard let self else { return }
+                let msg = error?.localizedDescription ?? "Unknown error"
+                print("[GeminiLive] WebSocket error: \(msg)")
+                Task { @MainActor in
+                    self.resolveConnect(success: false)
+                    self.lastError = msg
+                    self.connectionState = .failed(msg)
+                    self.isModelSpeaking = false
+                    self.onConnectionStateChanged?(self.connectionState)
+                    self.onDisconnected?()
+                }
+            }
+
+            // Create and resume WebSocket task
+            self.webSocketTask = self.urlSession?.webSocketTask(with: url)
+            self.webSocketTask?.resume()
+
+            // Timeout after 15 seconds
+            Task {
+                try? await Task.sleep(nanoseconds: 15_000_000_000)
+                await MainActor.run {
+                    if self.connectionState == .connecting {
+                        print("[GeminiLive] Connection timed out")
+                        self.resolveConnect(success: false)
+                        self.connectionState = .failed("Connection timed out")
+                        self.onConnectionStateChanged?(self.connectionState)
+                    }
+                }
+            }
+        }
+
+        guard success else {
+            let msg = lastError ?? "Failed to connect"
+            closeWebSocket()
+            throw AIBackendError.connectionFailed(msg)
+        }
+
+        connectionState = .connected
+        onConnectionStateChanged?(connectionState)
+        print("[GeminiLive] Connected and ready")
     }
 
     /// Disconnect from Gemini Live
@@ -147,33 +181,43 @@ final class GeminiLiveService: ObservableObject {
     }
 
     /// Build WebSocket URL
-    private func buildWebSocketURL() -> URL {
+    private func buildWebSocketURL() -> URL? {
         var components = URLComponents(string: Constants.GeminiLive.websocketEndpoint)!
         components.queryItems = [
             URLQueryItem(name: "key", value: apiKey)
         ]
-        return components.url!
+        return components.url
     }
 
-    /// Close WebSocket
+    /// Resolve the connect continuation (only once)
+    private func resolveConnect(success: Bool) {
+        if let cont = connectContinuation {
+            connectContinuation = nil
+            cont.resume(returning: success)
+        }
+    }
+
+    /// Close WebSocket without changing state
     private func closeWebSocket() {
         receiveTask?.cancel()
         receiveTask = nil
 
-        webSocket?.cancel(with: .normalClosure, reason: nil)
-        webSocket = nil
+        webSocketTask?.cancel(with: .normalClosure, reason: nil)
+        webSocketTask = nil
 
-        urlSession?.invalidateAndCancel()
-        urlSession = nil
+        // Clear delegate callbacks to avoid retain cycles
+        delegate.onOpen = nil
+        delegate.onClose = nil
+        delegate.onError = nil
 
-        isSetupComplete = false
         isModelSpeaking = false
+        resolveConnect(success: false)
     }
 
     // MARK: - Setup
 
-    /// Send setup message to configure the session
-    private func sendSetup() async throws {
+    /// Send setup message to configure the session (called from onOpen callback)
+    private func sendSetupMessage() {
         let setup: [String: Any] = [
             "setup": [
                 "model": Constants.GeminiLive.modelName,
@@ -204,7 +248,7 @@ final class GeminiLiveService: ObservableObject {
             ]
         ]
 
-        try await sendJSON(setup)
+        sendJSON(setup)
     }
 
     /// Build system prompt
@@ -235,29 +279,22 @@ final class GeminiLiveService: ObservableObject {
         return prompt
     }
 
-    /// Build tool declarations
-    private func buildToolDeclarations() -> [[String: Any]] {
-        // For Gemini Live, we can declare tools that OpenClaw can execute
-        return []
-    }
-
     // MARK: - Send Audio
 
     /// Send audio data to Gemini
     func sendAudio(data: Data) {
         guard connectionState.isUsable, !isModelSpeaking else { return }
 
-        let message: [String: Any] = [
-            "realtimeInput": [
-                "audio": [
-                    "mimeType": "audio/pcm;rate=\(Constants.GeminiLive.inputSampleRate)",
-                    "data": data.base64EncodedString()
+        sendQueue.async { [weak self] in
+            let message: [String: Any] = [
+                "realtimeInput": [
+                    "audio": [
+                        "mimeType": "audio/pcm;rate=\(Constants.GeminiLive.inputSampleRate)",
+                        "data": data.base64EncodedString()
+                    ]
                 ]
             ]
-        ]
-
-        Task {
-            try? await sendJSON(message)
+            self?.sendJSON(message)
         }
     }
 
@@ -284,7 +321,7 @@ final class GeminiLiveService: ObservableObject {
             ]
         ]
 
-        try await sendJSON(message)
+        sendJSON(message)
     }
 
     /// Interrupt the AI (barge-in support)
@@ -307,30 +344,32 @@ final class GeminiLiveService: ObservableObject {
         guard now.timeIntervalSince(lastFrameTime) >= frameInterval else { return }
         lastFrameTime = now
 
-        let message: [String: Any] = [
-            "realtimeInput": [
-                "video": [
-                    "mimeType": "image/jpeg",
-                    "data": imageData.base64EncodedString()
+        sendQueue.async { [weak self] in
+            let message: [String: Any] = [
+                "realtimeInput": [
+                    "video": [
+                        "mimeType": "image/jpeg",
+                        "data": imageData.base64EncodedString()
+                    ]
                 ]
             ]
-        ]
-
-        Task {
-            try? await sendJSON(message)
+            self?.sendJSON(message)
         }
     }
 
     // MARK: - Send JSON
 
-    /// Send JSON message
-    private func sendJSON(_ object: [String: Any]) async throws {
-        guard let webSocket = webSocket else {
-            throw AIBackendError.notConnected
+    /// Send JSON message as string (matching VisionClaw)
+    private func sendJSON(_ object: [String: Any]) {
+        guard let data = try? JSONSerialization.data(withJSONObject: object),
+              let string = String(data: data, encoding: .utf8) else {
+            return
         }
-
-        let data = try JSONSerialization.data(withJSONObject: object)
-        try await webSocket.send(.data(data))
+        webSocketTask?.send(.string(string)) { error in
+            if let error = error {
+                print("[GeminiLive] Send error: \(error.localizedDescription)")
+            }
+        }
     }
 
     // MARK: - Receive Loop
@@ -339,18 +378,30 @@ final class GeminiLiveService: ObservableObject {
     private func startReceiving() {
         receiveTask = Task { [weak self] in
             while !Task.isCancelled {
-                guard let self = self, let webSocket = self.webSocket else { break }
+                guard let self = self, let task = self.webSocketTask else { break }
 
                 do {
-                    let message = try await webSocket.receive()
-                    await self.handleMessage(message)
+                    let message = try await task.receive()
+                    switch message {
+                    case .string(let text):
+                        await self.handleMessage(text)
+                    case .data(let data):
+                        if let text = String(data: data, encoding: .utf8) {
+                            await self.handleMessage(text)
+                        }
+                    @unknown default:
+                        break
+                    }
                 } catch {
                     if !Task.isCancelled {
-                        print("[GeminiLive] Receive error (WebSocket dropped): \(error.localizedDescription)")
-                        if let nsError = error as NSError? {
-                            print("[GeminiLive] Error domain: \(nsError.domain), code: \(nsError.code)")
+                        print("[GeminiLive] Receive error: \(error.localizedDescription)")
+                        await MainActor.run {
+                            self.resolveConnect(success: false)
+                            self.connectionState = .disconnected
+                            self.isModelSpeaking = false
+                            self.onConnectionStateChanged?(self.connectionState)
+                            self.onDisconnected?()
                         }
-                        await self.handleDisconnect()
                     }
                     break
                 }
@@ -358,41 +409,29 @@ final class GeminiLiveService: ObservableObject {
         }
     }
 
-    /// Handle incoming message
-    private func handleMessage(_ message: URLSessionWebSocketTask.Message) async {
-        guard let data = extractData(from: message) else { return }
-        
-        // Log raw message for debugging
-        if let rawString = String(data: data, encoding: .utf8) {
-            let preview = rawString.count > 500 ? String(rawString.prefix(500)) + "..." : rawString
-            print("[GeminiLive] RAW message: \(preview)")
-            await MainActor.run {
-                self.lastServerMessage = preview
-            }
-        }
-        
-        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            print("[GeminiLive] Failed to parse JSON from message")
+    /// Handle incoming message (string-based, matching VisionClaw)
+    private func handleMessage(_ text: String) async {
+        guard let data = text.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             return
         }
 
         // Setup complete
         if json["setupComplete"] != nil {
-            isSetupComplete = true
+            print("[GeminiLive] Setup complete")
+            resolveConnect(success: true)
             return
         }
 
-        // Server content (audio, text, etc.)
-        if let serverContent = json["serverContent"] as? [String: Any] {
-            handleServerContent(serverContent)
-            return
-        }
-
-        // Input transcription (user's speech) - can come at root level
-        if let inputTranscription = json["inputTranscription"] as? [String: Any],
-           let text = inputTranscription["text"] as? String, !text.isEmpty {
-            print("[GeminiLive] User said: \(text)")
-            onInputTranscription?(text)
+        // Go away (server closing connection)
+        if let goAway = json["goAway"] as? [String: Any] {
+            let timeLeft = goAway["timeLeft"] as? [String: Any]
+            let seconds = timeLeft?["seconds"] as? Int ?? 0
+            print("[GeminiLive] Server closing (time left: \(seconds)s)")
+            connectionState = .disconnected
+            isModelSpeaking = false
+            onConnectionStateChanged?(connectionState)
+            onDisconnected?()
             return
         }
 
@@ -402,40 +441,25 @@ final class GeminiLiveService: ObservableObject {
             return
         }
 
-        // Go away (server closing connection)
-        if let goAway = json["goAway"] as? [String: Any] {
-            print("[GeminiLive] Server requested disconnect with reason: \(goAway)")
-            await handleDisconnect()
-            return
-        }
-        
         // Error from server
         if let error = json["error"] as? [String: Any] {
-            print("[GeminiLive] Server sent error: \(error)")
-            await handleDisconnect()
+            print("[GeminiLive] Server error: \(error)")
+            connectionState = .disconnected
+            isModelSpeaking = false
+            onConnectionStateChanged?(connectionState)
+            onDisconnected?()
             return
         }
-    }
 
-    /// Extract data from WebSocket message
-    private func extractData(from message: URLSessionWebSocketTask.Message) -> Data? {
-        switch message {
-        case .data(let d): return d
-        case .string(let s): return Data(s.utf8)
-        @unknown default: return nil
+        // Server content (audio, text, transcription, etc.)
+        if let serverContent = json["serverContent"] as? [String: Any] {
+            handleServerContent(serverContent)
+            return
         }
     }
 
     /// Handle server content
     private func handleServerContent(_ content: [String: Any]) {
-        // Check if turn complete
-        if content["turnComplete"] as? Bool == true {
-            isModelSpeaking = false
-            isProcessing = false
-            onTurnComplete?()
-            return
-        }
-
         // Check if interrupted
         if content["interrupted"] as? Bool == true {
             isModelSpeaking = false
@@ -443,39 +467,59 @@ final class GeminiLiveService: ObservableObject {
             return
         }
 
-        // Model turn
+        // Model turn (audio + text)
         if let modelTurn = content["modelTurn"] as? [String: Any],
            let parts = modelTurn["parts"] as? [[String: Any]] {
 
             for part in parts {
                 // Audio data
                 if let inlineData = part["inlineData"] as? [String: Any],
+                   let mimeType = inlineData["mimeType"] as? String,
+                   mimeType.hasPrefix("audio/pcm"),
                    let base64 = inlineData["data"] as? String,
                    let audioData = Data(base64Encoded: base64) {
 
                     // Track latency for first audio
-                    if !isModelSpeaking, let speechEnd = lastUserSpeechEnd {
-                        let latency = Date().timeIntervalSince(speechEnd) * 1000
-                        print("[GeminiLive] Latency: \(Int(latency))ms")
-                        lastUserSpeechEnd = nil
+                    if !isModelSpeaking {
+                        isModelSpeaking = true
+                        if let speechEnd = lastUserSpeechEnd, !responseLatencyLogged {
+                            let latency = Date().timeIntervalSince(speechEnd) * 1000
+                            print("[GeminiLive] Latency: \(Int(latency))ms")
+                            responseLatencyLogged = true
+                        }
                     }
 
-                    isModelSpeaking = true
                     isProcessing = true
                     onAudioReceived?(audioData)
                 }
 
-                // Text (transcription)
+                // Text (output transcription in parts)
                 if let text = part["text"] as? String {
                     onOutputTranscription?(text)
                 }
             }
         }
 
-        // Input transcription
+        // Turn complete
+        if content["turnComplete"] as? Bool == true {
+            isModelSpeaking = false
+            isProcessing = false
+            responseLatencyLogged = false
+            onTurnComplete?()
+        }
+
+        // Input transcription (user's speech)
         if let inputTranscription = content["inputTranscription"] as? [String: Any],
-           let text = inputTranscription["text"] as? String {
+           let text = inputTranscription["text"] as? String, !text.isEmpty {
+            lastUserSpeechEnd = Date()
+            responseLatencyLogged = false
             onInputTranscription?(text)
+        }
+
+        // Output transcription
+        if let outputTranscription = content["outputTranscription"] as? [String: Any],
+           let text = outputTranscription["text"] as? String, !text.isEmpty {
+            onOutputTranscription?(text)
         }
     }
 
@@ -484,12 +528,41 @@ final class GeminiLiveService: ObservableObject {
         // For future: route tool calls to OpenClaw
         print("[GeminiLive] Tool call received: \(toolCall)")
     }
+}
 
-    /// Handle disconnect
-    private func handleDisconnect() async {
-        connectionState = .disconnected
-        onConnectionStateChanged?(connectionState)
-        closeWebSocket()
-        onDisconnected?()
+// MARK: - WebSocket Delegate
+
+/// Proper URLSessionWebSocketDelegate for connection lifecycle management
+/// (VisionClaw pattern - replaces unreliable .state polling)
+private class WebSocketDelegate: NSObject, URLSessionWebSocketDelegate {
+    var onOpen: ((String?) -> Void)?
+    var onClose: ((URLSessionWebSocketTask.CloseCode, Data?) -> Void)?
+    var onError: ((Error?) -> Void)?
+
+    func urlSession(
+        _ session: URLSession,
+        webSocketTask: URLSessionWebSocketTask,
+        didOpenWithProtocol protocol: String?
+    ) {
+        onOpen?(`protocol`)
+    }
+
+    func urlSession(
+        _ session: URLSession,
+        webSocketTask: URLSessionWebSocketTask,
+        didCloseWith closeCode: URLSessionWebSocketTask.CloseCode,
+        reason: Data?
+    ) {
+        onClose?(closeCode, reason)
+    }
+
+    func urlSession(
+        _ session: URLSession,
+        task: URLSessionTask,
+        didCompleteWithError error: Error?
+    ) {
+        if let error {
+            onError?(error)
+        }
     }
 }
