@@ -873,31 +873,15 @@ struct VoiceAgentView: View {
 
         print("[VoiceAgentView] Starting live video mode...")
 
-        // Stop VoiceCommandService - Gemini will handle audio directly
+        // Step 1: Stop VoiceCommandService - Gemini will handle audio directly
         voiceCommandService.stopListening()
-
-        // Stop TTS if speaking
         ttsService.stop()
 
-        // BUGFIX: Wait for AVAudioSession to stabilize the Bluetooth HFP route
-        // before asking MWDAT to negotiate the Wi-Fi direct video stream.
-        // Without this delay, iOS interrupts the Wi-Fi handshake, causing Error 4.
-        try? await Task.sleep(nanoseconds: 1_500_000_000)
-
-        // Start glasses streaming
-        if !glassesManager.isStreaming {
-            await glassesManager.startStreaming()
-        }
-
-        // Connect to Gemini Live
+        // Step 2: Connect to Gemini Live WebSocket FIRST (no audio/video yet)
         do {
             try await geminiLive.connect()
         } catch {
             errorMessage = "Failed to connect to Gemini Live: \(error.localizedDescription)"
-            // Cleanup: stop streaming and restart voice commands
-            if glassesManager.isStreaming {
-                await glassesManager.stopStreaming()
-            }
             do {
                 try voiceCommandService.startListening()
                 voiceCommandService.enterConversationMode()
@@ -907,32 +891,51 @@ struct VoiceAgentView: View {
             return
         }
 
-        // Setup Gemini Live callbacks
+        // Step 3: Setup Gemini Live callbacks
         setupGeminiLiveCallbacks()
 
-        // Setup audio capture → Gemini Live
+        // Step 4: Setup audio capture callback → Gemini Live
         audioCapture.onAudioCaptured = { [weak geminiLive] data in
             geminiLive?.sendAudio(data: data)
         }
 
-        // Setup audio playback
+        // Step 5: Setup audio playback engine
         do {
             try audioPlayback.setup()
         } catch {
             print("[VoiceAgentView] Failed to setup audio playback: \(error)")
         }
 
-        // Start audio capture
+        // Step 6: Start audio capture engine
+        // This activates AVAudioSession with Bluetooth HFP which can disrupt Wi-Fi.
+        // We do this BEFORE starting the camera stream so iOS finishes the
+        // audio routing change before MWDAT negotiates its Wi-Fi Direct session.
         do {
             try audioCapture.startCapture()
         } catch {
             errorMessage = "Failed to start audio capture: \(error.localizedDescription)"
             await geminiLive.disconnect()
-            voiceCommandService.enterConversationMode()
+            do {
+                try voiceCommandService.startListening()
+                voiceCommandService.enterConversationMode()
+            } catch {
+                print("[VoiceAgentView] Failed to restart voice commands: \(error)")
+            }
             return
         }
 
-        // Setup video frame routing to Gemini Live
+        // Step 7: Wait for AVAudioSession + Bluetooth HFP to fully stabilize
+        // before starting the Wi-Fi Direct video stream.
+        print("[VoiceAgentView] Audio engines started, waiting 2s for HFP to stabilize...")
+        try? await Task.sleep(nanoseconds: 2_000_000_000) // 2 seconds
+
+        // Step 8: NOW start the glasses camera stream (Wi-Fi Direct)
+        // Audio is already stable so iOS won't interrupt the Wi-Fi handshake.
+        if !glassesManager.isStreaming {
+            await glassesManager.startStreaming()
+        }
+
+        // Step 9: Setup video frame routing to Gemini Live
         glassesManager.onVideoFrame = { [weak geminiLive] image in
             if let jpegData = image.jpegData(compressionQuality: 0.6) {
                 geminiLive?.sendVideoFrame(imageData: jpegData)
