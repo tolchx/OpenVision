@@ -164,7 +164,13 @@ struct VoiceAgentView: View {
             print("[VoiceAgentView] VoiceCommandService state changed to: \(newState)")
             switch newState {
             case .idle:
-                // Conversation ended, return to idle
+                // In Gemini Live mode, pauseForGeminiLive() sets state to .idle
+                // — do NOT disconnect! The session is still active.
+                if isLiveVideoMode || voiceCommandService.isPausedForGemini {
+                    print("[VoiceAgentView] Voice idle but in Gemini Live mode, keeping session")
+                    return
+                }
+                // Conversation ended, return to idle (OpenClaw mode)
                 if isSessionActive {
                     print("[VoiceAgentView] Voice service idle, stopping session")
                     isSessionActive = false
