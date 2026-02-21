@@ -178,17 +178,32 @@ final class GeminiLiveService: ObservableObject {
             "setup": [
                 "model": Constants.GeminiLive.modelName,
                 "generationConfig": [
-                    "responseModalities": ["AUDIO"]
+                    "responseModalities": ["AUDIO"],
+                    "thinkingConfig": [
+                        "thinkingBudget": 0
+                    ]
                 ],
                 "systemInstruction": [
                     "parts": [
                         ["text": buildSystemPrompt()]
                     ]
-                ]
+                ],
+                "realtimeInputConfig": [
+                    "automaticActivityDetection": [
+                        "disabled": false,
+                        "startOfSpeechSensitivity": "START_SENSITIVITY_HIGH",
+                        "endOfSpeechSensitivity": "END_SENSITIVITY_LOW",
+                        "prefixPaddingMs": 40,
+                        "silenceDurationMs": 500
+                    ],
+                    "activityHandling": "START_OF_ACTIVITY_INTERRUPTS",
+                    "turnCoverage": "TURN_INCLUDES_ALL_INPUT"
+                ],
+                "inputAudioTranscription": [:] as [String: Any],
+                "outputAudioTranscription": [:] as [String: Any]
             ]
         ]
 
-        print("[GeminiLive] Sending setup: \(Constants.GeminiLive.modelName)")
         try await sendJSON(setup)
     }
 
