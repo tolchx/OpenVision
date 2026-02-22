@@ -643,6 +643,14 @@ struct VoiceAgentView: View {
     private func setupVoiceCommandService() {
         print("[VoiceAgentView] Setting up voice command callbacks")
 
+        // Local speech transcription during Gemini Live mode
+        // Shows what the user is saying in real-time in the chat
+        voiceCommandService.onLocalTranscription = { text in
+            Task { @MainActor in
+                self.userTranscript = text
+            }
+        }
+
         // Allow wake word to interrupt TTS (for "ok vision stop")
         voiceCommandService.shouldAllowInterrupt = { [weak ttsService] in
             return ttsService?.isSpeaking ?? false

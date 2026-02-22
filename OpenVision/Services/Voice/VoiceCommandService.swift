@@ -70,6 +70,10 @@ final class VoiceCommandService: ObservableObject {
     /// Called when conversation mode times out (no speech detected)
     var onConversationTimeout: (() -> Void)?
 
+    /// Called with local speech transcription during Gemini Live mode
+    /// Provides real-time text of what the user is saying
+    var onLocalTranscription: ((String) -> Void)?
+
     // MARK: - Barge-in Control
 
     /// When true, barge-in detection is paused (e.g., during TTS playback)
@@ -176,7 +180,9 @@ final class VoiceCommandService: ObservableObject {
         inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { [weak self] buffer, _ in
             guard let self = self else { return }
             if self.isPausedForGemini {
+                // Send audio to BOTH Gemini and local speech recognition
                 self.geminiAudioHandler?(buffer)
+                self.liveTranscriptionRequest?.append(buffer)
             } else {
                 self.recognitionRequest?.append(buffer)
             }
@@ -242,6 +248,12 @@ final class VoiceCommandService: ObservableObject {
     /// Whether we're paused for Gemini Live mode
     private(set) var isPausedForGemini = false
 
+    /// Parallel speech recognition during Gemini Live mode
+    private var liveTranscriptionRequest: SFSpeechAudioBufferRecognitionRequest?
+    private var liveTranscriptionTask: SFSpeechRecognitionTask?
+    /// Accumulated final transcript for the current user turn
+    private var liveAccumulatedTranscript = ""
+
     /// Pause recognition but keep engine running, redirect audio to Gemini Live.
     /// This avoids tearing down/recreating AVAudioEngine which disrupts
     /// the Meta SDK's Wi-Fi Direct camera stream.
@@ -272,7 +284,11 @@ final class VoiceCommandService: ObservableObject {
         isPausedForGemini = true
         state = .idle
         currentTranscription = ""
-        print("[VoiceCommand] Audio now redirected to Gemini Live")
+
+        // Start parallel local speech recognition
+        startLiveTranscription()
+
+        print("[VoiceCommand] Audio now redirected to Gemini Live + local transcription")
     }
 
     /// Resume normal voice command recognition after Gemini Live mode ends.
@@ -286,6 +302,9 @@ final class VoiceCommandService: ObservableObject {
 
         geminiAudioHandler = nil
         isPausedForGemini = false
+
+        // Stop live transcription
+        stopLiveTranscription()
 
         // Recreate recognition request (tap remains installed)
         recognitionTask?.cancel()
@@ -308,6 +327,85 @@ final class VoiceCommandService: ObservableObject {
 
         state = .idle
         print("[VoiceCommand] Recognition restored")
+    }
+
+    /// Start a parallel speech recognition task for local transcription during Gemini Live mode
+    private func startLiveTranscription() {
+        guard let recognizer = speechRecognizer, recognizer.isAvailable else {
+            print("[VoiceCommand] Speech recognizer not available for live transcription")
+            return
+        }
+
+        liveAccumulatedTranscript = ""
+
+        liveTranscriptionRequest = SFSpeechAudioBufferRecognitionRequest()
+        guard let request = liveTranscriptionRequest else { return }
+
+        request.shouldReportPartialResults = true
+        request.taskHint = .dictation
+
+        liveTranscriptionTask = recognizer.recognitionTask(with: request) { [weak self] result, error in
+            Task { @MainActor in
+                guard let self = self, self.isPausedForGemini else { return }
+
+                if let result = result {
+                    let text = result.bestTranscription.formattedString
+
+                    // Deliver the full accumulated + current partial text
+                    let fullText = self.liveAccumulatedTranscript.isEmpty
+                        ? text
+                        : self.liveAccumulatedTranscript + " " + text
+                    self.onLocalTranscription?(fullText)
+
+                    // If this segment is final, accumulate it and restart for the next utterance
+                    if result.isFinal {
+                        self.liveAccumulatedTranscript = fullText
+                        // Restart recognition for the next sentence
+                        self.restartLiveTranscription()
+                    }
+                }
+
+                if let error = error {
+                    // Recognition errors are expected (timeouts, etc.) — just restart
+                    let nsError = error as NSError
+                    // Code 203 = "No speech detected", 216 = "Recognition cancelled"
+                    if nsError.code != 216 {
+                        print("[VoiceCommand] Live transcription error: \(error.localizedDescription)")
+                        // Restart after error (unless we're no longer in Gemini mode)
+                        if self.isPausedForGemini {
+                            self.restartLiveTranscription()
+                        }
+                    }
+                }
+            }
+        }
+
+        print("[VoiceCommand] Live transcription started")
+    }
+
+    /// Restart live transcription (for next utterance after a final result)
+    private func restartLiveTranscription() {
+        liveTranscriptionTask?.cancel()
+        liveTranscriptionTask = nil
+        liveTranscriptionRequest?.endAudio()
+        liveTranscriptionRequest = nil
+
+        // Small delay to avoid rapid restarts
+        Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 200_000_000) // 200ms
+            guard let self = self, self.isPausedForGemini else { return }
+            self.startLiveTranscription()
+        }
+    }
+
+    /// Stop live transcription
+    private func stopLiveTranscription() {
+        liveTranscriptionTask?.cancel()
+        liveTranscriptionTask = nil
+        liveTranscriptionRequest?.endAudio()
+        liveTranscriptionRequest = nil
+        liveAccumulatedTranscript = ""
+        print("[VoiceCommand] Live transcription stopped")
     }
 
     /// Enter conversation mode (no wake word needed for follow-ups)
