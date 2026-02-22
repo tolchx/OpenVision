@@ -193,6 +193,10 @@ final class GlassesManager: ObservableObject {
 
         await session.stop()
 
+        // Give the Meta SDK 500ms to safely tear down the hardware socket.
+        // Doing this prevents 'deviceNotConnected' (Error 2) if started again too quickly.
+        try? await Task.sleep(nanoseconds: 500_000_000)
+
         cleanupStreamListeners()
         streamSession = nil
         isStreaming = false
@@ -288,6 +292,23 @@ final class GlassesManager: ObservableObject {
             Task { @MainActor in
                 self?.errorMessage = error.localizedDescription
                 print("[GlassesManager] Stream error: \(error)")
+
+                // Auto-healing for MWDATCamera Error 2 (deviceNotConnected) or stream drops
+                // The SDK can crash the stream if momentarily interrupted.
+                if let isStreaming = self?.isStreaming, isStreaming {
+                    print("[GlassesManager] Attempting auto-reconnect due to error...")
+                    Task {
+                        // Stop current faulty session safely
+                        await self?.stopStreaming()
+                        
+                        // Wait 2 seconds for hardware to stabilize
+                        try? await Task.sleep(nanoseconds: 2_000_000_000)
+                        
+                        // Attempt to reconnect if still registered
+                        print("[GlassesManager] Auto-reconnecting stream...")
+                        await self?.startStreaming()
+                    }
+                }
             }
         }
     }
