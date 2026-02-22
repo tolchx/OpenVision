@@ -39,6 +39,9 @@ struct VoiceAgentView: View {
 
     /// Debug log sheet
     @State private var showDebugLog = false
+    
+    /// Text input for manual chatting
+    @State private var inputText = ""
 
     // MARK: - Agent State
 
@@ -108,7 +111,12 @@ struct VoiceAgentView: View {
 
                 // Bottom controls
                 bottomControls
-                    .padding(.bottom, 32)
+                    .padding(.bottom, 16)
+                    
+                // Text Input Box
+                textInputBox
+                    .padding(.horizontal)
+                    .padding(.bottom, 24)
             }
 
             // Error overlay
@@ -376,6 +384,51 @@ struct VoiceAgentView: View {
             ) {
                 // Quick settings
             }
+        }
+    }
+    
+    // MARK: - Text Input Box
+
+    private var textInputBox: some View {
+        HStack(spacing: 12) {
+            TextField("Message or command...", text: $inputText)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+                .background(Color.white.opacity(0.1))
+                .cornerRadius(20)
+                .foregroundColor(.white)
+                .accentColor(.white)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 20)
+                        .stroke(Color.white.opacity(0.2), lineWidth: 1)
+                )
+                .onSubmit {
+                    submitTextCommand()
+                }
+
+            Button(action: {
+                submitTextCommand()
+            }) {
+                Image(systemName: "arrow.up.circle.fill")
+                    .resizable()
+                    .frame(width: 32, height: 32)
+                    .foregroundColor(inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? .gray : .blue)
+            }
+            .disabled(inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        }
+    }
+    
+    private func submitTextCommand() {
+        let text = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return }
+        inputText = ""
+        
+        // Hide keyboard
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+        
+        Task {
+            // Process the command as if it was spoken
+            await sendCommand(text)
         }
     }
 
