@@ -82,3 +82,33 @@ if isLiveVideoMode {
     return
 }
 ```
+
+## 5. iOS `AVAudioEngine` Silent Tap Dropping (0 Chunks Sent)
+If `OpenVision` successfully connects to Gemini Live but starts sending 0 audio chunks, it means the iOS `AVAudioEngine` silently severed the `installTap` on the microphone's input node.
+
+**Why it happens:**
+Calling `engine.attach()` or `engine.connect()` on a **running** `AVAudioEngine` forces iOS to reconfigure the internal audio graph. When it does this, it silently deletes all existing taps (like the one feeding your microphone to Gemini) without throwing an error.
+
+**How to fix:**
+Always attach and connect **all** nodes (including the playback `AVAudioPlayerNode`) *before* calling `audioEngine.start()`. Do not spin up or connect player nodes dynamically while the mic is recording. 
+
+## 6. Gemini Disconnecting at ~5 Seconds (Audio Chunk Alignment)
+If Gemini connects, receives exactly 5 seconds of audio, and then aggressively closes the WebSocket, it means the PCM audio chunk sizes or sample rates are misaligned. Gemini expects precisely 16kHz, mono, `Int16` PCM, typically exactly in 100ms chunks (3200 bytes).
+
+**How to fix `AudioCaptureService.swift`:**
+Do **not** use manual linear math arrays to downsample the native 44.1kHz iPhone mic. Instead, strictly use Apple's native `AVAudioConverter`:
+1. Initialize an `AVAudioConverter` transforming from `buffer.format` to standard `16000Hz`.
+2. Push the resulting buffer sequentially, forcing exactly `3200` byte cuts before emitting over the WebSocket.
+
+## 7. Gemini Disconnecting Mid-Sentence (Dual Engine Conflict)
+If Gemini connects, you speak, Gemini replies "Hola, en qué puedo...", and then instantly disconnects mid-sentence, the playback engine is killing the capturing engine.
+
+**Why it happens:**
+If `VoiceCommandService` holds `AVAudioEngine A` for the microphone, and `AudioPlaybackService` allocates `AVAudioEngine B` to play Gemini's response, starting Engine B instantly signals iOS AVFoundation to interrupt Engine A's tap. The mic cuts out, Gemini hears abrupt silence, assumes network failure, and kills the WebSocket.
+
+**How to fix `VoiceCommandService` & `AudioPlaybackService`:**
+Use a **Single Unified Engine Architecture**:
+1. Remove `AVAudioEngine` from `AudioPlaybackService`. Let it only hold an `AVAudioPlayerNode`.
+2. Extract the `playerNode` from the playback service and physically attach it to the exact same `AVAudioEngine` running the microphone inside `VoiceCommandService`.
+3. Connect the node directly to `.mainMixerNode`.
+4. Now, when Gemini speaks, playback merges safely into the ongoing hardware audio session, leaving the microphone tap completely undisturbed!
