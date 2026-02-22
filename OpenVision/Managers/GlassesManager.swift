@@ -214,12 +214,7 @@ final class GlassesManager: ObservableObject {
 
         print("[GlassesManager] Capturing photo")
 
-        do {
-            try await session.capturePhoto(format: .jpeg)
-        } catch {
-            errorMessage = "Failed to capture photo: \(error.localizedDescription)"
-            print("[GlassesManager] Photo capture error: \(error)")
-        }
+        session.capturePhoto(format: .jpeg)
     }
 
     // MARK: - Private Methods

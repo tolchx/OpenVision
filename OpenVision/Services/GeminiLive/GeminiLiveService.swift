@@ -317,7 +317,9 @@ final class GeminiLiveService: ObservableObject {
                     ]
                 ]
             ]
-            self?.sendJSON(message)
+            Task { @MainActor [weak self] in
+                self?.sendJSON(message)
+            }
         }
     }
 
@@ -377,7 +379,9 @@ final class GeminiLiveService: ObservableObject {
                     ]
                 ]
             ]
-            self?.sendJSON(message)
+            Task { @MainActor [weak self] in
+                self?.sendJSON(message)
+            }
         }
     }
 

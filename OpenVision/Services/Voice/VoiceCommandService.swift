@@ -246,7 +246,7 @@ final class VoiceCommandService: ObservableObject {
     /// This avoids tearing down/recreating AVAudioEngine which disrupts
     /// the Meta SDK's Wi-Fi Direct camera stream.
     func pauseForGeminiLive(audioHandler: @escaping (AVAudioPCMBuffer) -> Void) {
-        guard isListening, let engine = audioEngine else {
+        guard isListening, let _ = audioEngine else {
             print("[VoiceCommand] Not listening, can't pause for Gemini")
             return
         }
@@ -277,7 +277,7 @@ final class VoiceCommandService: ObservableObject {
 
     /// Resume normal voice command recognition after Gemini Live mode ends.
     func resumeFromGeminiLive() {
-        guard isPausedForGemini, let engine = audioEngine else {
+        guard isPausedForGemini, let _ = audioEngine else {
             print("[VoiceCommand] Not in Gemini pause state")
             return
         }

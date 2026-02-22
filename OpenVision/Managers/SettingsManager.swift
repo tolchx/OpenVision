@@ -87,7 +87,7 @@ final class SettingsManager: ObservableObject {
         saveTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: UInt64(self?.debounceInterval ?? 0.5 * 1_000_000_000))
             guard !Task.isCancelled else { return }
-            await self?.performSave()
+            self?.performSave()
             self?.onSettingsChanged?(self?.settings ?? AppSettings())
         }
     }

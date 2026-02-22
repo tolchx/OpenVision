@@ -62,6 +62,21 @@ struct GlassCard<Content: View>: View {
     }
 }
 
+extension GlassCard where Content == EmptyView {
+    init(
+        cornerRadius: CGFloat = 20,
+        opacity: CGFloat = 0.15,
+        blurRadius: CGFloat = 10
+    ) {
+        self.init(
+            cornerRadius: cornerRadius,
+            opacity: opacity,
+            blurRadius: blurRadius,
+            content: { EmptyView() }
+        )
+    }
+}
+
 /// A glowing orb button for primary actions
 struct GlowingOrbButton: View {
     let isActive: Bool
