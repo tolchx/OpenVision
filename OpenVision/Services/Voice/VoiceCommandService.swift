@@ -130,7 +130,8 @@ final class VoiceCommandService: ObservableObject {
     // MARK: - Start/Stop
 
     /// Start listening for wake word or commands
-    func startListening() throws {
+    /// - Parameter sharedPlayerNode: Optional AVAudioPlayerNode to attach before starting the engine (prevents tap drops)
+    func startListening(with sharedPlayerNode: AVAudioPlayerNode? = nil) throws {
         guard authorizationStatus == .authorized else {
             throw VoiceCommandError.notAuthorized
         }
@@ -142,6 +143,19 @@ final class VoiceCommandService: ObservableObject {
 
         guard let audioEngine = audioEngine else {
             throw VoiceCommandError.audioEngineUnavailable
+        }
+
+        // Attach shared player node early before starting engine if provided
+        if let playerNode = sharedPlayerNode {
+            audioEngine.attach(playerNode)
+            // Need a float32 format for playback compatibility
+            let playerFormat = AVAudioFormat(
+                commonFormat: .pcmFormatFloat32,
+                sampleRate: Double(Constants.GeminiLive.outputSampleRate),
+                channels: 1, // Mono
+                interleaved: false
+            )!
+            audioEngine.connect(playerNode, to: audioEngine.mainMixerNode, format: playerFormat)
         }
 
         // Create recognition request

@@ -45,10 +45,19 @@ final class AudioPlaybackService: ObservableObject {
             ownsEngine = true
         }
         
-        playerNode = AVAudioPlayerNode()
+        // Wait, VisionClaw just attaches the node. But we need to make sure the playerNode exists.
+        if playerNode == nil {
+            playerNode = AVAudioPlayerNode()
+        }
 
         guard let engine = audioEngine, let player = playerNode else {
             throw AudioPlaybackError.setupFailed
+        }
+        
+        // Prevent modifying running engines because doing so silently drops active mic taps
+        let wasRunning = engine.isRunning
+        if wasRunning {
+            print("[AudioPlayback] Warning: Attaching to running engine! This may drop mic taps on iOS.")
         }
 
         engine.attach(player)
@@ -70,6 +79,14 @@ final class AudioPlaybackService: ObservableObject {
                 throw error
             }
         }
+    }
+    
+    /// Pre-warmed Player Node for early injection to avoid engine reconfiguration bugs
+    var playerNodeForInjection: AVAudioPlayerNode {
+        if playerNode == nil {
+            playerNode = AVAudioPlayerNode()
+        }
+        return playerNode!
     }
 
     /// Teardown audio engine

@@ -755,7 +755,7 @@ struct VoiceAgentView: View {
         configureAudioForGlasses()
 
         do {
-            try voiceCommandService.startListening()
+            try voiceCommandService.startListening(with: audioPlayback.playerNodeForInjection)
             isVoiceReady = true
             print("[VoiceAgentView] Started wake word listening - READY")
         } catch {
@@ -991,7 +991,7 @@ struct VoiceAgentView: View {
         } else {
             // Fallback: restart from scratch if needed
             do {
-                try voiceCommandService.startListening()
+                try voiceCommandService.startListening(with: audioPlayback.playerNodeForInjection)
             } catch {
                 print("[VoiceAgentView] Failed to restart voice commands: \(error)")
             }
