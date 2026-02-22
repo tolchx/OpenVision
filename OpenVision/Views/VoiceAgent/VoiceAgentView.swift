@@ -439,6 +439,31 @@ struct VoiceAgentView: View {
         .transition(.move(edge: .bottom).combined(with: .opacity))
     }
 
+    // MARK: - Chat History Persistence
+
+    /// Persist the current live turn (user transcript + AI transcript) into 
+    /// ConversationManager so it becomes a permanent chat bubble.
+    /// Called when Gemini signals `onTurnComplete`.
+    private func persistCompletedTurn() {
+        let user = userTranscript.trimmingCharacters(in: .whitespacesAndNewlines)
+        let ai   = aiTranscript.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        // Save user message if present (voice-captured turns)
+        if !user.isEmpty {
+            conversationManager.addUserMessage(user)
+        }
+
+        // Save AI response if present
+        if !ai.isEmpty {
+            conversationManager.addAssistantMessage(ai)
+        }
+
+        // Clear the live transcripts so the ActiveTurnBubble disappears
+        // and the messages now live in the permanent chat history above
+        userTranscript = ""
+        aiTranscript = ""
+    }
+
     // MARK: - Actions
 
     private func toggleSession() {
@@ -659,6 +684,9 @@ struct VoiceAgentView: View {
 
             self.userTranscript = command
 
+            // Persist user message to chat history
+            self.conversationManager.addUserMessage(command)
+
             // Send command to AI backend
             Task {
                 await self.sendCommand(command)
@@ -715,6 +743,9 @@ struct VoiceAgentView: View {
 
             self.aiTranscript = message
 
+            // Persist AI response to chat history
+            self.conversationManager.addAssistantMessage(message)
+
             // Speak the response via TTS
             self.speakResponse(message)
             // Note: agentState will be set to .speaking by TTS callback
@@ -768,6 +799,7 @@ struct VoiceAgentView: View {
         }
 
         GeminiLiveService.shared.onTurnComplete = {
+            self.persistCompletedTurn()
             self.agentState = self.isSessionActive ? .listening : .idle
             self.voiceCommandService.enterConversationMode()
         }
@@ -847,6 +879,11 @@ struct VoiceAgentView: View {
         if isLiveVideoMode {
             // Gemini Live is handling audio directly, so this shouldn't be reached
             // But if text is sent via the text input box, we send it directly to Gemini
+            
+            // Persist the user's text message to chat history immediately
+            conversationManager.addUserMessage(command)
+            userTranscript = ""
+            
             do {
                 // If they ask what we see in text, explicitly feed the most recent camera frame 
                 // in real time so the text question isn't blind and gets the immediate context
@@ -887,6 +924,10 @@ struct VoiceAgentView: View {
                 // State updates handled by callbacks
 
             case .geminiLive:
+                // Persist user message to chat history immediately
+                conversationManager.addUserMessage(command)
+                userTranscript = ""
+                
                 try await GeminiLiveService.shared.sendText(command)
                 // Gemini Live handles response streaming via callbacks
             }
@@ -1068,9 +1109,11 @@ struct VoiceAgentView: View {
             }
         }
 
-        // Turn complete
+        // Turn complete — persist the completed turn to chat history
         geminiLive.onTurnComplete = {
-            // Still in live mode, keep listening
+            Task { @MainActor in
+                self.persistCompletedTurn()
+            }
         }
 
         // Disconnection - handle reconnection or mode exit
