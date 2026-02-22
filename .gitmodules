@@ -1,0 +1,3 @@
+[submodule "VisionClaw_Ref"]
+	path = VisionClaw_Ref
+	url = https://github.com/tolchx/VisionClaw.git
