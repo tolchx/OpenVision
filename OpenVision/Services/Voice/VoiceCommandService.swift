@@ -88,6 +88,11 @@ final class VoiceCommandService: ObservableObject {
 
     private var audioEngine: AVAudioEngine?
 
+    /// Exposes the active audio engine so other services (like playback) can share the session
+    var activeEngine: AVAudioEngine? {
+        return audioEngine
+    }
+
     // MARK: - Timers
 
     private var silenceTimer: Timer?

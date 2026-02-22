@@ -918,10 +918,10 @@ struct VoiceAgentView: View {
         log.log("Setting up callbacks...", source: "LiveMode", level: .debug)
         setupGeminiLiveCallbacks()
 
-        // Setup audio playback for Gemini responses
+        // Setup audio playback for Gemini responses using the shared engine
         do {
-            try audioPlayback.setup()
-            log.log("Audio playback ready", source: "LiveMode", level: .success)
+            try audioPlayback.setup(with: voiceCommandService.activeEngine)
+            log.log("Audio playback ready (shared engine)", source: "LiveMode", level: .success)
         } catch {
             log.log("Audio playback setup failed: \(error)", source: "LiveMode", level: .error)
         }

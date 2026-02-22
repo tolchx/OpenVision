@@ -19,6 +19,9 @@ final class AudioPlaybackService: ObservableObject {
 
     private var audioEngine: AVAudioEngine?
     private var playerNode: AVAudioPlayerNode?
+    
+    /// Tracks if we created and own the engine (controls if we should stop it on teardown)
+    private var ownsEngine: Bool = true
 
     // MARK: - Format
 
@@ -32,8 +35,16 @@ final class AudioPlaybackService: ObservableObject {
     // MARK: - Setup
 
     /// Setup audio engine for playback
-    func setup() throws {
-        audioEngine = AVAudioEngine()
+    /// - Parameter engine: Optional existing AVAudioEngine to attach to. If nil, creates a new one.
+    func setup(with existingEngine: AVAudioEngine? = nil) throws {
+        if let existing = existingEngine {
+            audioEngine = existing
+            ownsEngine = false
+        } else {
+            audioEngine = AVAudioEngine()
+            ownsEngine = true
+        }
+        
         playerNode = AVAudioPlayerNode()
 
         guard let engine = audioEngine, let player = playerNode else {
@@ -45,20 +56,34 @@ final class AudioPlaybackService: ObservableObject {
         // Create output format (Float32 at device sample rate)
         let outputFormat = engine.outputNode.outputFormat(forBus: 0)
 
+        // Prevent connection crash if already connected
         engine.connect(player, to: engine.mainMixerNode, format: outputFormat)
-        do {
-            try engine.start()
-            print("[AudioPlayback] Engine started successfully")
-        } catch {
-            print("[AudioPlayback] ERROR starting engine: \(error.localizedDescription)")
-            throw error
+        
+        if ownsEngine {
+            do {
+                if !engine.isRunning {
+                    try engine.start()
+                    print("[AudioPlayback] Engine started successfully")
+                }
+            } catch {
+                print("[AudioPlayback] ERROR starting engine: \(error.localizedDescription)")
+                throw error
+            }
         }
     }
 
     /// Teardown audio engine
     func teardown() {
         playerNode?.stop()
-        audioEngine?.stop()
+        
+        if let engine = audioEngine, let player = playerNode {
+            engine.detach(player)
+        }
+        
+        if ownsEngine {
+            audioEngine?.stop()
+        }
+        
         audioEngine = nil
         playerNode = nil
         isPlaying = false
