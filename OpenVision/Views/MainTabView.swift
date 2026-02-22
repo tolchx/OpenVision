@@ -46,6 +46,7 @@ struct MainTabView: View {
             case .history:
                 NavigationView {
                     ConversationListView()
+                        .environmentObject(conversationManager)
                 }
             case .settings:
                 NavigationView {
@@ -53,6 +54,16 @@ struct MainTabView: View {
                 }
             case .debug:
                 DebugLogView()
+            case .newChat:
+                // This case is handled below in onChange, not as a sheet
+                EmptyView()
+            }
+        }
+        .onChange(of: currentSheet) { newValue in
+            if newValue == .newChat {
+                // Start a new conversation and dismiss immediately
+                conversationManager.startNewConversation()
+                currentSheet = nil
             }
         }
     }

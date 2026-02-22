@@ -11,6 +11,7 @@ struct HamburgerMenuView: View {
         case history
         case settings
         case debug
+        case newChat
     }
 
     var body: some View {
@@ -46,6 +47,13 @@ struct HamburgerMenuView: View {
 
                     // Navigation Links
                     VStack(alignment: .leading, spacing: 20) {
+                        MenuButton(icon: "plus.bubble.fill", title: "New Chat", color: .green) {
+                            withAnimation { isOpen = false }
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                                currentSheet = .newChat
+                            }
+                        }
+
                         MenuButton(icon: "clock.fill", title: "History") {
                             withAnimation { isOpen = false }
                             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {

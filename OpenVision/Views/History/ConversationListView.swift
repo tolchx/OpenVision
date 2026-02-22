@@ -6,36 +6,56 @@ import SwiftUI
 struct ConversationListView: View {
     // MARK: - Environment
 
-    @EnvironmentObject var settingsManager: SettingsManager
+    @EnvironmentObject var conversationManager: ConversationManager
+    @Environment(\.dismiss) private var dismiss
 
     // MARK: - State
 
-    @State private var conversations: [Conversation] = []
     @State private var searchText: String = ""
-    @State private var selectedConversation: Conversation?
+    @State private var showDeleteAlert = false
+    @State private var conversationToDelete: Conversation?
 
     // MARK: - Body
 
     var body: some View {
-        NavigationStack {
-            Group {
-                if conversations.isEmpty {
-                    emptyState
-                } else {
-                    conversationList
+        Group {
+            if conversationManager.conversations.isEmpty {
+                emptyState
+            } else if filteredConversations.isEmpty {
+                noResultsState
+            } else {
+                conversationList
+            }
+        }
+        .navigationTitle("History")
+        .navigationBarTitleDisplayMode(.large)
+        .searchable(text: $searchText, prompt: "Search conversations")
+        .toolbar {
+            ToolbarItem(placement: .navigationBarLeading) {
+                Button("Close") {
+                    dismiss()
                 }
             }
-            .navigationTitle("History")
-            .searchable(text: $searchText, prompt: "Search conversations")
-            .toolbar {
-                ToolbarItem(placement: .primaryAction) {
-                    Button {
-                        // Start new conversation
-                    } label: {
-                        Image(systemName: "plus")
+            ToolbarItem(placement: .primaryAction) {
+                if !conversationManager.conversations.isEmpty {
+                    EditButton()
+                }
+            }
+        }
+        .alert("Delete Conversation?", isPresented: $showDeleteAlert) {
+            Button("Delete", role: .destructive) {
+                if let conversation = conversationToDelete {
+                    withAnimation {
+                        conversationManager.deleteConversation(conversation)
                     }
                 }
+                conversationToDelete = nil
             }
+            Button("Cancel", role: .cancel) {
+                conversationToDelete = nil
+            }
+        } message: {
+            Text("This conversation will be permanently deleted.")
         }
     }
 
@@ -50,11 +70,23 @@ struct ConversationListView: View {
             Text("No conversations yet")
                 .font(.headline)
 
-            Text("Start a conversation with the AI assistant to see your history here.")
+            Text("Start talking to the AI assistant to see your history here.")
                 .font(.subheadline)
                 .foregroundColor(.secondary)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 32)
+        }
+    }
+
+    // MARK: - No Results State
+
+    private var noResultsState: some View {
+        VStack(spacing: 12) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 40))
+                .foregroundColor(.secondary)
+            Text("No results for \"\(searchText)\"")
+                .font(.headline)
         }
     }
 
@@ -68,6 +100,14 @@ struct ConversationListView: View {
                 } label: {
                     ConversationRow(conversation: conversation)
                 }
+                .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                    Button(role: .destructive) {
+                        conversationToDelete = conversation
+                        showDeleteAlert = true
+                    } label: {
+                        Label("Delete", systemImage: "trash")
+                    }
+                }
             }
             .onDelete(perform: deleteConversations)
         }
@@ -78,9 +118,9 @@ struct ConversationListView: View {
 
     private var filteredConversations: [Conversation] {
         if searchText.isEmpty {
-            return conversations
+            return conversationManager.conversations
         }
-        return conversations.filter { conversation in
+        return conversationManager.conversations.filter { conversation in
             conversation.title.localizedCaseInsensitiveContains(searchText) ||
             conversation.messages.contains { message in
                 message.content.localizedCaseInsensitiveContains(searchText)
@@ -91,8 +131,10 @@ struct ConversationListView: View {
     // MARK: - Methods
 
     private func deleteConversations(at offsets: IndexSet) {
-        conversations.remove(atOffsets: offsets)
-        // TODO: Persist deletion
+        let convos = filteredConversations
+        for index in offsets {
+            conversationManager.deleteConversation(convos[index])
+        }
     }
 }
 
@@ -154,15 +196,6 @@ struct ConversationDetailView: View {
         }
         .navigationTitle(conversation.title)
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                Button {
-                    // Continue conversation
-                } label: {
-                    Label("Continue", systemImage: "arrow.right.circle")
-                }
-            }
-        }
     }
 }
 
@@ -173,7 +206,7 @@ struct MessageBubble: View {
 
     var body: some View {
         HStack {
-            if message.role == .assistant {
+            if message.role == .user {
                 Spacer(minLength: 40)
             }
 
@@ -190,7 +223,7 @@ struct MessageBubble: View {
                     .foregroundColor(.secondary)
             }
 
-            if message.role == .user {
+            if message.role == .assistant {
                 Spacer(minLength: 40)
             }
         }
@@ -198,6 +231,8 @@ struct MessageBubble: View {
 }
 
 #Preview {
-    ConversationListView()
-        .environmentObject(SettingsManager.shared)
+    NavigationView {
+        ConversationListView()
+            .environmentObject(ConversationManager.shared)
+    }
 }
