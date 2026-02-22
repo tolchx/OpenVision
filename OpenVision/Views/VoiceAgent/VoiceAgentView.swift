@@ -427,6 +427,23 @@ struct VoiceAgentView: View {
         UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
         
         Task {
+            // Auto-Start the session if disconnected
+            if !isSessionActive {
+                print("[VoiceAgentView] Auto-starting session for text input...")
+                startSession()
+                
+                // Wait for the connection to establish (timeout ~10s)
+                for _ in 0..<100 {
+                    if agentState != .connecting {
+                        break
+                    }
+                    try? await Task.sleep(nanoseconds: 100_000_000) // 100ms
+                }
+            }
+            
+            // Wait an extra beat for websocket/engine internals to stabilize
+            try? await Task.sleep(nanoseconds: 300_000_000)
+
             // Process the command as if it was spoken
             await sendCommand(text)
         }
