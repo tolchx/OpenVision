@@ -99,7 +99,7 @@ struct AnimatedBackground: View {
                     }
                 )
         }
-        .ignoresSafeArea()
+        .ignoresSafeArea(.container, edges: .all)
         .onAppear {
             withAnimation(
                 .easeInOut(duration: 8)

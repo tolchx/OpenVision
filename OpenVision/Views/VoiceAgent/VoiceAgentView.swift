@@ -82,52 +82,55 @@ struct VoiceAgentView: View {
     // MARK: - Body
 
     var body: some View {
-        ZStack {
-            // Beautiful animated background
-            AnimatedBackground()
+        VStack(spacing: 0) {
+            // Top bar
+            topBar
+                .padding(.top, 8)
 
-            // Particle effects
-            ParticleEffect(particleCount: 30)
-                .opacity(0.5)
+            Spacer()
 
-            // Main content
-            VStack(spacing: 0) {
-                // Top bar
-                topBar
-                    .padding(.top, 8)
+            // Center: Visualizer and status
+            centerContent
 
-                Spacer()
+            Spacer()
 
-                // Center: Visualizer and status
-                centerContent
-
-                Spacer()
-
-                // Transcript area
-                if settingsManager.settings.showTranscripts && (!userTranscript.isEmpty || !aiTranscript.isEmpty || agentState == .thinking) {
-                    transcriptArea
-                        .transition(.move(edge: .bottom).combined(with: .opacity))
-                }
-
-                // Bottom controls
-                bottomControls
-                    .padding(.bottom, 16)
-                    
-                // Text Input Box
-                textInputBox
-                    .padding(.horizontal)
-                    .padding(.bottom, 24)
+            // Transcript area
+            if settingsManager.settings.showTranscripts && (!userTranscript.isEmpty || !aiTranscript.isEmpty || agentState == .thinking) {
+                transcriptArea
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
             }
 
-            // Error overlay
-            if let error = errorMessage {
-                errorOverlay(error)
-            }
+            // Bottom controls
+            bottomControls
+                .padding(.bottom, 16)
+                
+            // Text Input Box
+            textInputBox
+                .padding(.horizontal)
+                .padding(.bottom, 24)
         }
+        .background(
+            ZStack {
+                // Beautiful animated background
+                AnimatedBackground()
+
+                // Particle effects
+                ParticleEffect(particleCount: 30)
+                    .opacity(0.5)
+            }
+            .ignoresSafeArea()
+        )
+        .overlay(
+            Group {
+                // Error overlay
+                if let error = errorMessage {
+                    errorOverlay(error)
+                }
+            }
+        )
         .animation(.spring(response: 0.4), value: agentState)
         .animation(.spring(response: 0.4), value: userTranscript)
         .animation(.spring(response: 0.4), value: aiTranscript)
-        .ignoresSafeArea(.keyboard) // Allow SwiftUI to handle the keyboard offset safely where we want it to push up
         .sheet(isPresented: $showDebugLog) {
             DebugLogView()
         }
