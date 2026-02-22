@@ -9,6 +9,11 @@ struct VoiceAgentView: View {
 
     @EnvironmentObject var settingsManager: SettingsManager
     @EnvironmentObject var glassesManager: GlassesManager
+    @EnvironmentObject var conversationManager: ConversationManager
+
+    // MARK: - App State
+
+    @Binding var isMenuOpen: Bool
 
     // MARK: - Services
 
@@ -86,27 +91,15 @@ struct VoiceAgentView: View {
             // Top bar
             topBar
                 .padding(.top, 8)
+                .padding(.bottom, 8)
 
-            Spacer()
-
-            // Center: Visualizer and status
-            centerContent
-
-            Spacer()
-
-            // Transcript area
-            if settingsManager.settings.showTranscripts && (!userTranscript.isEmpty || !aiTranscript.isEmpty || agentState == .thinking) {
-                transcriptArea
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
-            }
-
-            // Bottom controls
-            bottomControls
-                .padding(.bottom, 16)
+            // Chat history takes up the entire center
+            chatHistory
                 
-            // Text Input Box
+            // Text Input Box & Compact Mic
             textInputBox
                 .padding(.horizontal)
+                .padding(.top, 16)
                 .padding(.bottom, 24)
         }
         .background(
@@ -215,32 +208,36 @@ struct VoiceAgentView: View {
 
     private var topBar: some View {
         HStack {
+            // Hamburger Menu Button
+            Button(action: {
+                withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+                    isMenuOpen.toggle()
+                }
+            }) {
+                Image(systemName: "line.3.horizontal")
+                    .font(.title2)
+                    .foregroundColor(.white)
+                    .frame(width: 44, height: 44)
+                    .background(Color.white.opacity(0.1))
+                    .clipShape(Circle())
+            }
+
+            Spacer()
+            
             // AI Backend status (or Live Video indicator)
             if isLiveVideoMode {
                 HStack(spacing: 6) {
                     Circle()
                         .fill(.red)
                         .frame(width: 10, height: 10)
-                        .overlay(
-                            Circle()
-                                .stroke(.red.opacity(0.5), lineWidth: 2)
-                                .scaleEffect(1.5)
-                        )
-
+                        
                     Text("LIVE")
                         .font(.caption.bold())
-                        .foregroundColor(.white)
-
-                    Image(systemName: "video.fill")
-                        .font(.caption)
                         .foregroundColor(.white)
                 }
                 .padding(.horizontal, 12)
                 .padding(.vertical, 6)
-                .background(
-                    Capsule()
-                        .fill(.red.opacity(0.8))
-                )
+                .background(Capsule().fill(.red.opacity(0.8)))
             } else {
                 StatusPill(
                     status: settingsManager.settings.aiBackend.displayName,
@@ -255,171 +252,126 @@ struct VoiceAgentView: View {
             HStack(spacing: 8) {
                 Image(systemName: "eyeglasses")
                     .foregroundColor(glassesManager.isRegistered ? .green : .gray)
-
-                if glassesManager.isStreaming {
-                    Circle()
-                        .fill(.red)
-                        .frame(width: 8, height: 8)
-                }
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
             .background(
                 Capsule()
                     .fill(.ultraThinMaterial)
-                    .overlay(
-                        Capsule()
-                            .stroke(Color.white.opacity(0.1), lineWidth: 1)
-                    )
+                    .overlay(Capsule().stroke(Color.white.opacity(0.1), lineWidth: 1))
             )
         }
         .padding(.horizontal)
     }
 
-    // MARK: - Center Content
+    // MARK: - Chat History
 
-    private var centerContent: some View {
-        VStack(spacing: 32) {
-            // Status hints
-            if agentState == .idle && settingsManager.settings.wakeWordEnabled {
-                if isVoiceReady {
-                    Text("Say \"\(settingsManager.settings.wakeWord)\" to start")
-                        .font(.subheadline)
-                        .foregroundColor(.white.opacity(0.6))
-                        .transition(.opacity)
-                } else {
-                    HStack(spacing: 8) {
-                        ProgressView()
-                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                            .scaleEffect(0.8)
+    private var chatHistory: some View {
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(spacing: 16) {
+                    // System initialization hints
+                    if agentState == .idle && settingsManager.settings.wakeWordEnabled && !isVoiceReady {
                         Text("Initializing voice...")
-                            .font(.subheadline)
-                            .foregroundColor(.white.opacity(0.6))
+                            .font(.caption)
+                            .foregroundColor(.white.opacity(0.5))
+                            .padding(.top, 40)
                     }
-                    .transition(.opacity)
+
+                    // Render existing messages from the conversation manager
+                    if let messages = conversationManager.currentConversation?.messages {
+                        ForEach(messages) { message in
+                            ChatMessageBubble(message: message)
+                                .id(message.id)
+                        }
+                    }
+
+                    // Render the current active turn (live transcription)
+                    if !userTranscript.isEmpty || !aiTranscript.isEmpty || agentState == .thinking {
+                        ActiveTurnBubble(
+                            userText: userTranscript,
+                            aiText: aiTranscript,
+                            isAIStreaming: agentState == .speaking || agentState == .thinking
+                        )
+                        .id("active_turn")
+                    }
+                    
+                    // Invisible spacer for scrolling
+                    Color.clear.frame(height: 1).id("bottomSpacer")
                 }
-            } else if agentState == .liveVideo {
-                VStack(spacing: 4) {
-                    Text("Gemini Live")
-                        .font(.headline)
-                        .foregroundColor(.white)
-
-                    Text("Say \"stop video\" to exit")
-                        .font(.caption)
-                        .foregroundColor(.white.opacity(0.6))
-                }
-                .transition(.opacity)
+                .padding(.horizontal)
+                .padding(.vertical, 20)
             }
-
-            // Waveform visualizer
-            WaveformVisualizer(
-                isActive: agentState == .listening || agentState == .speaking,
-                intensity: audioLevel
-            )
-            .frame(height: 80)
-            .padding(.horizontal, 40)
-
-            // Main orb button
-            GlowingOrbButton(
-                isActive: isSessionActive,
-                isProcessing: agentState == .thinking || agentState == .toolRunning
-            ) {
-                toggleSession()
+            .onChange(of: conversationManager.currentConversation?.messages.count) { _ in
+                withAnimation { proxy.scrollTo("bottomSpacer", anchor: .bottom) }
             }
-
-            // Status text
-            Text(agentState.displayText)
-                .font(.title3)
-                .fontWeight(.medium)
-                .foregroundColor(.white)
-
-            // Tool status
-            if let tool = currentToolName, agentState == .toolRunning {
-                ToolStatusView(toolName: tool, isRunning: true)
-                    .transition(.scale.combined(with: .opacity))
+            .onChange(of: userTranscript) { _ in
+                withAnimation { proxy.scrollTo("active_turn", anchor: .bottom) }
             }
-        }
-    }
-
-    // MARK: - Transcript Area
-
-    private var transcriptArea: some View {
-        GlassCard(cornerRadius: 24, opacity: 0.1) {
-            VStack(spacing: 16) {
-                TranscriptView(
-                    userText: userTranscript,
-                    aiText: aiTranscript,
-                    isAIStreaming: agentState == .speaking
-                )
-            }
-            .padding(20)
-        }
-        .padding(.horizontal)
-        .frame(maxHeight: 200)
-    }
-
-    // MARK: - Bottom Controls
-
-    private var bottomControls: some View {
-        HStack(spacing: 24) {
-            // Camera button
-            FloatingActionButton(
-                icon: "camera.fill",
-                color: .blue,
-                isEnabled: glassesManager.isStreaming || true // Enable for iPhone fallback
-            ) {
-                capturePhoto()
-            }
-
-            // Debug log button
-            FloatingActionButton(
-                icon: "ladybug.fill",
-                color: .orange,
-                isEnabled: true
-            ) {
-                showDebugLog = true
-            }
-
-            // Settings quick access
-            FloatingActionButton(
-                icon: "slider.horizontal.3",
-                color: .purple,
-                isEnabled: true
-            ) {
-                // Quick settings
+            .onChange(of: aiTranscript) { _ in
+                withAnimation { proxy.scrollTo("active_turn", anchor: .bottom) }
             }
         }
     }
     
-    // MARK: - Text Input Box
+    // MARK: - Text Input Box & Compact Mic
 
     private var textInputBox: some View {
         HStack(spacing: 12) {
+            // Text Field
             TextField("Message or command...", text: $inputText)
                 .padding(.horizontal, 16)
-                .padding(.vertical, 12)
+                .padding(.vertical, 14)
                 .background(Color.white.opacity(0.1))
-                .cornerRadius(20)
+                .cornerRadius(24)
                 .foregroundColor(.white)
                 .accentColor(.white)
                 .overlay(
-                    RoundedRectangle(cornerRadius: 20)
+                    RoundedRectangle(cornerRadius: 24)
                         .stroke(Color.white.opacity(0.2), lineWidth: 1)
                 )
                 .onSubmit {
                     submitTextCommand()
                 }
 
-            Button(action: {
-                submitTextCommand()
-            }) {
-                Image(systemName: "arrow.up.circle.fill")
-                    .resizable()
-                    .frame(width: 32, height: 32)
-                    .foregroundColor(inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? .gray : .blue)
+            // Text Send Button
+            if !inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                Button(action: {
+                    submitTextCommand()
+                }) {
+                    Image(systemName: "arrow.up.circle.fill")
+                        .resizable()
+                        .frame(width: 36, height: 36)
+                        .foregroundColor(.blue)
+                }
+                .transition(.scale.combined(with: .opacity))
+            } else {
+                // Compact Microphone Orb
+                Button(action: {
+                    toggleSession()
+                }) {
+                    ZStack {
+                        Circle()
+                            .fill(isSessionActive ? Color.blue.opacity(0.2) : Color.white.opacity(0.1))
+                            .frame(width: 44, height: 44)
+                        
+                        Image(systemName: isSessionActive ? "stop.fill" : "mic.fill")
+                            .font(.system(size: 20, weight: .semibold))
+                            .foregroundColor(isSessionActive ? .white : .blue)
+                            
+                        if agentState == .listening || agentState == .thinking {
+                            Circle()
+                                .stroke(Color.blue.opacity(0.5), lineWidth: 2)
+                                .frame(width: 50, height: 50)
+                                .scaleEffect(audioLevel > 0.05 ? 1.0 + CGFloat(audioLevel) : 1.0)
+                                .animation(.easeOut(duration: 0.1), value: audioLevel)
+                        }
+                    }
+                }
+                .transition(.scale.combined(with: .opacity))
             }
-            .disabled(inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         }
+        .animation(.spring(response: 0.3), value: inputText)
     }
     
     private func submitTextCommand() {
@@ -1362,8 +1314,9 @@ struct VoiceAgentView: View {
 }
 
 #Preview {
-    VoiceAgentView()
+    VoiceAgentView(isMenuOpen: .constant(false))
         .environmentObject(SettingsManager.shared)
         .environmentObject(GlassesManager.shared)
+        .environmentObject(ConversationManager.shared)
         .preferredColorScheme(.dark)
 }

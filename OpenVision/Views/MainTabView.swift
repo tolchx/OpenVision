@@ -1,5 +1,5 @@
 // OpenVision - MainTabView.swift
-// Main tab navigation: Voice Agent, History, Settings
+// Main root navigation coordinator
 
 import SwiftUI
 
@@ -12,76 +12,55 @@ struct MainTabView: View {
 
     // MARK: - State
 
-    @State private var selectedTab: Tab = .voice
-
-    // MARK: - Tab Enum
-
-    enum Tab: String, CaseIterable {
-        case voice = "Voice"
-        case history = "History"
-        case settings = "Settings"
-
-        var icon: String {
-            switch self {
-            case .voice: return "waveform.circle.fill"
-            case .history: return "clock.fill"
-            case .settings: return "gearshape.fill"
-            }
-        }
-
-        var selectedIcon: String {
-            switch self {
-            case .voice: return "waveform.circle.fill"
-            case .history: return "clock.fill"
-            case .settings: return "gearshape.fill"
-            }
-        }
-    }
+    @State private var isMenuOpen: Bool = false
+    @State private var currentSheet: HamburgerMenuView.SheetType? = nil
 
     // MARK: - Body
 
     var body: some View {
-        TabView(selection: $selectedTab) {
-            // Voice Agent Tab
-            VoiceAgentView()
-                .tabItem {
-                    Label(Tab.voice.rawValue, systemImage: Tab.voice.icon)
+        ZStack {
+            // Main App View
+            VoiceAgentView(isMenuOpen: $isMenuOpen)
+                // Slight scale down effect when menu is open for a 3D drawer look
+                .scaleEffect(isMenuOpen ? 0.95 : 1.0)
+                .blur(radius: isMenuOpen ? 2 : 0)
+                .animation(.spring(response: 0.4, dampingFraction: 0.8), value: isMenuOpen)
+                // Consume taps when menu is open to prevent interacting with the background
+                .onTapGesture {
+                    if isMenuOpen {
+                        withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+                            isMenuOpen = false
+                        }
+                    }
                 }
-                .tag(Tab.voice)
+                .disabled(isMenuOpen)
 
-            // History Tab
-            ConversationListView()
-                .tabItem {
-                    Label(Tab.history.rawValue, systemImage: Tab.history.icon)
-                }
-                .tag(Tab.history)
-
-            // Settings Tab
-            SettingsView()
-                .tabItem {
-                    Label(Tab.settings.rawValue, systemImage: Tab.settings.icon)
-                }
-                .tag(Tab.settings)
+            // Hamburger Menu Overlay
+            HamburgerMenuView(isOpen: $isMenuOpen, currentSheet: $currentSheet)
         }
-        .tint(.blue)
-        .onAppear {
-            // Customize tab bar appearance for dark mode
-            let appearance = UITabBarAppearance()
-            appearance.configureWithOpaqueBackground()
-            appearance.backgroundColor = UIColor(white: 0.05, alpha: 0.95)
-
-            // Normal state
-            appearance.stackedLayoutAppearance.normal.iconColor = .gray
-            appearance.stackedLayoutAppearance.normal.titleTextAttributes = [.foregroundColor: UIColor.gray]
-
-            // Selected state
-            appearance.stackedLayoutAppearance.selected.iconColor = .systemBlue
-            appearance.stackedLayoutAppearance.selected.titleTextAttributes = [.foregroundColor: UIColor.systemBlue]
-
-            UITabBar.appearance().standardAppearance = appearance
-            UITabBar.appearance().scrollEdgeAppearance = appearance
+        .sheet(item: Binding<HamburgerMenuView.SheetType?>(
+            get: { self.currentSheet },
+            set: { self.currentSheet = $0 }
+        )) { sheetAction in
+            switch sheetAction {
+            case .history:
+                NavigationView {
+                    ConversationListView()
+                }
+            case .settings:
+                NavigationView {
+                    SettingsView()
+                }
+            case .debug:
+                DebugLogView()
+            }
         }
     }
+}
+
+// Make the enum conform to Identifiable so it can be used with .sheet(item:)
+extension HamburgerMenuView.SheetType: Identifiable {
+    var id: Self { self }
 }
 
 #Preview {
