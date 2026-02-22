@@ -795,7 +795,7 @@ struct VoiceAgentView: View {
 
         // Gemini Live callbacks (for Gemini Live mode, not hybrid)
         GeminiLiveService.shared.onOutputTranscription = { (text: String) in
-            self.aiTranscript = text
+            self.aiTranscript += text
         }
 
         GeminiLiveService.shared.onTurnComplete = {
@@ -1105,7 +1105,7 @@ struct VoiceAgentView: View {
 
         geminiLive.onOutputTranscription = { text in
             Task { @MainActor in
-                self.aiTranscript = text
+                self.aiTranscript += text
             }
         }
 
