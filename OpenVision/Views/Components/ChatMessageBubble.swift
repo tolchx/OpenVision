@@ -54,10 +54,7 @@ struct ChatMessageBubble: View {
                 Spacer(minLength: 40)
             }
         }
-        .transition(.asymmetric(
-            insertion: .scale(scale: 0.9).combined(with: .opacity).combined(with: .move(edge: message.role == .user ? .trailing : .leading)),
-            removal: .opacity
-        ))
+        .transition(.scale(scale: 0.95).combined(with: .opacity))
     }
 }
 

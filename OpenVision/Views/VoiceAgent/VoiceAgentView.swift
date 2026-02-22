@@ -42,9 +42,7 @@ struct VoiceAgentView: View {
     /// True when voice recognition is ready (audio engine running)
     @State private var isVoiceReady = false
 
-    /// Debug log sheet
-    @State private var showDebugLog = false
-    
+
     /// Text input for manual chatting
     @State private var inputText = ""
 
@@ -124,9 +122,7 @@ struct VoiceAgentView: View {
         .animation(.spring(response: 0.4), value: agentState)
         .animation(.spring(response: 0.4), value: userTranscript)
         .animation(.spring(response: 0.4), value: aiTranscript)
-        .sheet(isPresented: $showDebugLog) {
-            DebugLogView()
-        }
+
         .onAppear {
             setupVoiceCommandService()
             setupGlassesCallbacks()
