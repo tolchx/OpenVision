@@ -153,9 +153,14 @@ final class VoiceCommandService: ObservableObject {
         let inputNode = audioEngine.inputNode
         let recordingFormat = inputNode.outputFormat(forBus: 0)
 
-        // Install tap
-        inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { buffer, _ in
-            recognitionRequest.append(buffer)
+        // Install unified tap
+        inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { [weak self] buffer, _ in
+            guard let self = self else { return }
+            if self.isPausedForGemini {
+                self.geminiAudioHandler?(buffer)
+            } else {
+                self.recognitionRequest?.append(buffer)
+            }
         }
 
         // Start audio engine first (before recognition task)
@@ -243,16 +248,7 @@ final class VoiceCommandService: ObservableObject {
         conversationTimeoutTimer?.invalidate()
         conversationTimeoutTimer = nil
 
-        // Remove old tap and install new one that sends audio to Gemini
-        let inputNode = engine.inputNode
-        inputNode.removeTap(onBus: 0)
-
-        let recordingFormat = inputNode.outputFormat(forBus: 0)
         self.geminiAudioHandler = audioHandler
-
-        inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { [weak self] buffer, _ in
-            self?.geminiAudioHandler?(buffer)
-        }
 
         isPausedForGemini = true
         state = .idle
@@ -269,23 +265,20 @@ final class VoiceCommandService: ObservableObject {
 
         print("[VoiceCommand] Resuming normal recognition from Gemini Live pause")
 
-        // Remove Gemini tap
-        let inputNode = engine.inputNode
-        inputNode.removeTap(onBus: 0)
         geminiAudioHandler = nil
         isPausedForGemini = false
 
-        // Reinstall recognition tap
+        // Recreate recognition request (tap remains installed)
+        recognitionTask?.cancel()
+        recognitionTask = nil
+        recognitionRequest?.endAudio()
+        recognitionRequest = nil
+
         recognitionRequest = SFSpeechAudioBufferRecognitionRequest()
         guard let recognitionRequest = recognitionRequest else { return }
 
         recognitionRequest.shouldReportPartialResults = true
         recognitionRequest.taskHint = .dictation
-
-        let recordingFormat = inputNode.outputFormat(forBus: 0)
-        inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { buffer, _ in
-            recognitionRequest.append(buffer)
-        }
 
         // Start new recognition task
         recognitionTask = speechRecognizer?.recognitionTask(with: recognitionRequest) { [weak self] result, error in
@@ -323,24 +316,12 @@ final class VoiceCommandService: ObservableObject {
         recognitionRequest?.endAudio()
         recognitionRequest = nil
 
-        // Remove tap and stop engine briefly
-        audioEngine?.inputNode.removeTap(onBus: 0)
-
-        // Create new recognition request
+        // Create new recognition request (tap remains installed)
         recognitionRequest = SFSpeechAudioBufferRecognitionRequest()
         guard let recognitionRequest = recognitionRequest else { return }
 
         recognitionRequest.shouldReportPartialResults = true
         recognitionRequest.taskHint = .dictation
-
-        // Reinstall tap
-        guard let audioEngine = audioEngine else { return }
-        let inputNode = audioEngine.inputNode
-        let recordingFormat = inputNode.outputFormat(forBus: 0)
-
-        inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { buffer, _ in
-            recognitionRequest.append(buffer)
-        }
 
         // Start new recognition task
         recognitionTask = speechRecognizer?.recognitionTask(with: recognitionRequest) { [weak self] result, error in
