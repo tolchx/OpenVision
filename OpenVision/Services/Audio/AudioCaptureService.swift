@@ -108,48 +108,50 @@ final class AudioCaptureService: ObservableObject {
 
     // MARK: - Audio Processing
 
+    private var audioConverter: AVAudioConverter?
+    private var currentNativeFormat: AVAudioFormat?
+    private let targetFormat = AVAudioFormat(
+        commonFormat: .pcmFormatFloat32,
+        sampleRate: Double(Constants.GeminiLive.inputSampleRate),
+        channels: 1,
+        interleaved: false
+    )!
+
     /// Process audio buffer from tap
     private func processAudioBuffer(_ buffer: AVAudioPCMBuffer, nativeFormat: AVAudioFormat) {
-        guard let floatData = buffer.floatChannelData else { return }
-
-        let frameCount = Int(buffer.frameLength)
-        let channelCount = Int(nativeFormat.channelCount)
-
-        // Convert to mono Float32
-        var monoSamples = [Float](repeating: 0, count: frameCount)
-
-        if channelCount == 1 {
-            // Already mono
-            monoSamples = Array(UnsafeBufferPointer(start: floatData[0], count: frameCount))
-        } else {
-            // Mix to mono
-            for i in 0..<frameCount {
-                var sum: Float = 0
-                for ch in 0..<channelCount {
-                    sum += floatData[ch][i]
-                }
-                monoSamples[i] = sum / Float(channelCount)
+        // 1. Check if we need to setup/update the converter
+        if currentNativeFormat != nativeFormat {
+            currentNativeFormat = nativeFormat
+            let needsResample = nativeFormat.sampleRate != targetFormat.sampleRate || nativeFormat.channelCount != targetFormat.channelCount
+            if needsResample {
+                audioConverter = AVAudioConverter(from: nativeFormat, to: targetFormat)
+            } else {
+                audioConverter = nil
             }
         }
 
-        // Calculate audio level
-        let rms = sqrt(monoSamples.map { $0 * $0 }.reduce(0, +) / Float(frameCount))
+        // 2. Resample if needed
+        let bufferToProcess: AVAudioPCMBuffer
+        if let converter = audioConverter {
+            guard let resampled = convertBuffer(buffer, using: converter, targetFormat: targetFormat) else {
+                print("[AudioCapture] Resample failed")
+                return
+            }
+            bufferToProcess = resampled
+        } else {
+            bufferToProcess = buffer
+        }
+
+        // 3. Compute Audio Level (RMS)
+        let rms = computeRMS(bufferToProcess)
         Task { @MainActor in
             self.audioLevel = rms
         }
 
-        // Resample if needed
-        let resampledSamples: [Float]
-        if nativeFormat.sampleRate != targetSampleRate {
-            resampledSamples = resample(monoSamples, from: nativeFormat.sampleRate, to: targetSampleRate)
-        } else {
-            resampledSamples = monoSamples
-        }
+        // 4. Convert Float32 to Int16 PCM Data
+        let pcmData = float32BufferToInt16Data(bufferToProcess)
 
-        // Convert Float32 to Int16 PCM
-        let pcmData = convertToInt16PCM(resampledSamples)
-
-        // Add to buffer
+        // 5. Append and Chunk
         bufferLock.lock()
         audioBuffer.append(pcmData)
 
@@ -184,40 +186,62 @@ final class AudioCaptureService: ObservableObject {
         }
     }
 
-    /// Simple linear resampling
-    private func resample(_ samples: [Float], from sourceSampleRate: Double, to targetSampleRate: Double) -> [Float] {
-        let ratio = sourceSampleRate / targetSampleRate
-        let outputLength = Int(Double(samples.count) / ratio)
+    // MARK: - Conversion Helpers
 
-        var output = [Float](repeating: 0, count: outputLength)
-
-        for i in 0..<outputLength {
-            let sourceIndex = Double(i) * ratio
-            let index = Int(sourceIndex)
-            let fraction = Float(sourceIndex - Double(index))
-
-            if index + 1 < samples.count {
-                output[i] = samples[index] * (1 - fraction) + samples[index + 1] * fraction
-            } else if index < samples.count {
-                output[i] = samples[index]
-            }
+    private func computeRMS(_ buffer: AVAudioPCMBuffer) -> Float {
+        let frameCount = Int(buffer.frameLength)
+        guard frameCount > 0, let floatData = buffer.floatChannelData else { return 0 }
+        var sumSquares: Float = 0
+        for i in 0..<frameCount {
+            let s = floatData[0][i]
+            sumSquares += s * s
         }
-
-        return output
+        return sqrt(sumSquares / Float(frameCount))
     }
 
-    /// Convert Float32 samples to Int16 PCM data
-    private func convertToInt16PCM(_ samples: [Float]) -> Data {
-        var data = Data(capacity: samples.count * 2)
+    private func float32BufferToInt16Data(_ buffer: AVAudioPCMBuffer) -> Data {
+        let frameCount = Int(buffer.frameLength)
+        guard frameCount > 0, let floatData = buffer.floatChannelData else { return Data() }
+        var int16Array = [Int16](repeating: 0, count: frameCount)
+        for i in 0..<frameCount {
+            let sample = max(-1.0, min(1.0, floatData[0][i]))
+            int16Array[i] = Int16(sample * Float(Int16.max))
+        }
+        return int16Array.withUnsafeBufferPointer { ptr in
+            Data(buffer: ptr)
+        }
+    }
 
-        for sample in samples {
-            // Clamp to [-1, 1] and scale to Int16 range
-            let clamped = max(-1, min(1, sample))
-            let scaled = Int16(clamped * Float(Int16.max))
-            withUnsafeBytes(of: scaled.littleEndian) { data.append(contentsOf: $0) }
+    private func convertBuffer(
+        _ inputBuffer: AVAudioPCMBuffer,
+        using converter: AVAudioConverter,
+        targetFormat: AVAudioFormat
+    ) -> AVAudioPCMBuffer? {
+        let ratio = targetFormat.sampleRate / inputBuffer.format.sampleRate
+        let outputFrameCount = UInt32(Double(inputBuffer.frameLength) * ratio)
+        guard outputFrameCount > 0 else { return nil }
+
+        guard let outputBuffer = AVAudioPCMBuffer(pcmFormat: targetFormat, frameCapacity: outputFrameCount) else {
+            return nil
         }
 
-        return data
+        var error: NSError?
+        var consumed = false
+        converter.convert(to: outputBuffer, error: &error) { _, outStatus in
+            if consumed {
+                outStatus.pointee = .noDataNow
+                return nil
+            }
+            consumed = true
+            outStatus.pointee = .haveData
+            return inputBuffer
+        }
+
+        if error != nil {
+            return nil
+        }
+
+        return outputBuffer
     }
 }
 
