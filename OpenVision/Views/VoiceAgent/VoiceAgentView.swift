@@ -127,6 +127,7 @@ struct VoiceAgentView: View {
         .animation(.spring(response: 0.4), value: agentState)
         .animation(.spring(response: 0.4), value: userTranscript)
         .animation(.spring(response: 0.4), value: aiTranscript)
+        .ignoresSafeArea(.keyboard) // Allow SwiftUI to handle the keyboard offset safely where we want it to push up
         .sheet(isPresented: $showDebugLog) {
             DebugLogView()
         }
@@ -734,7 +735,12 @@ struct VoiceAgentView: View {
         // Conversation timeout (user didn't speak after AI response)
         voiceCommandService.onConversationTimeout = {
             print("[VoiceAgentView] Conversation timeout - returning to idle")
-            self.stopSession()
+            
+            // Do not stop the entire session explicitly if we are in live video mode,
+            // because the user might just be typing text or looking around.
+            if !self.isLiveVideoMode {
+                self.stopSession()
+            }
         }
 
         // Setup AI service callbacks for responses
@@ -889,8 +895,14 @@ struct VoiceAgentView: View {
         // If in live video mode, Gemini handles everything - don't process here
         if isLiveVideoMode {
             // Gemini Live is handling audio directly, so this shouldn't be reached
-            // But just in case, we can send text
+            // But if text is sent via the text input box, we send it directly to Gemini
             do {
+                // If they ask what we see in text, explicitly feed the most recent camera frame 
+                // in real time so the text question isn't blind and gets the immediate context
+                if let lastFrame = glassesManager.lastFrame, let jpegData = lastFrame.jpegData(compressionQuality: 0.6) {
+                    geminiLive.sendVideoFrame(imageData: jpegData)
+                }
+
                 try await geminiLive.sendText(command)
             } catch {
                 print("[VoiceAgentView] Failed to send to Gemini Live: \(error)")
