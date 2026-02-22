@@ -5,7 +5,7 @@ import SwiftUI
 
 /// Renders a single saved message from the Conversation history
 struct ChatMessageBubble: View {
-    let message: ConversationMessage
+    let message: Message
     
     var body: some View {
         HStack(alignment: .bottom, spacing: 12) {
@@ -50,7 +50,7 @@ struct ChatMessageBubble: View {
                         )
                 )
 
-            if message.role == .ai {
+            if message.role == .assistant {
                 Spacer(minLength: 40)
             }
         }
