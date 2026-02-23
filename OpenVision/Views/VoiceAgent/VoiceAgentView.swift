@@ -498,9 +498,57 @@ struct VoiceAgentView: View {
                     // User says "take a photo" → captureAndSendPhoto() starts streaming on-demand
 
                 case .geminiLive:
-                    // Gemini Live needs the FULL pipeline: connect + audio + video
-                    // startLiveVideoMode() handles everything
-                    await startLiveVideoMode()
+                    // Setup audio session for voiceChat mode (iPhone mic)
+                    // This mirrors VisionClaw's AudioManager.setupAudioSession()
+                    try AudioSessionManager.shared.configure(for: .voiceChat)
+
+                    // Start VoiceCommandService engine if not already running
+                    // The engine provides the mic tap that feeds audio to Gemini
+                    if !voiceCommandService.isListening {
+                        if voiceCommandService.authorizationStatus == .authorized {
+                            try voiceCommandService.startListening(with: audioPlayback.playerNodeForInjection)
+                        } else {
+                            errorMessage = "Speech recognition not authorized"
+                            isSessionActive = false
+                            agentState = .idle
+                            return
+                        }
+                    }
+
+                    // Connect to Gemini Live WebSocket
+                    try await geminiLive.connect()
+
+                    // Setup callbacks for audio/transcription
+                    setupGeminiLiveCallbacks()
+
+                    // Setup audio playback for Gemini responses using the shared engine
+                    do {
+                        try audioPlayback.setup(with: voiceCommandService.activeEngine)
+                    } catch {
+                        print("[VoiceAgentView] Audio playback setup failed: \(error)")
+                    }
+
+                    // Redirect audio engine to Gemini
+                    audioCapture.onAudioCaptured = { [weak geminiLive] data in
+                        geminiLive?.sendAudio(data: data)
+                    }
+                    voiceCommandService.pauseForGeminiLive { buffer in
+                        self.audioCapture.processExternalBuffer(buffer, nativeFormat: buffer.format)
+                    }
+
+                    isLiveVideoMode = true
+
+                    // Start glasses video streaming if available (optional enhancement)
+                    if glassesManager.isRegistered {
+                        if !glassesManager.isStreaming {
+                            await glassesManager.startStreaming()
+                        }
+                        glassesManager.onVideoFrame = { [weak geminiLive] image in
+                            if let jpegData = image.jpegData(compressionQuality: 0.6) {
+                                geminiLive?.sendVideoFrame(imageData: jpegData)
+                            }
+                        }
+                    }
                 }
 
                 agentState = isLiveVideoMode ? .liveVideo : .listening
@@ -947,20 +995,11 @@ struct VoiceAgentView: View {
 
     // MARK: - Live Video Mode
 
-    /// Start live video mode - Gemini handles both audio and video
+    /// Start live video mode via voice command ("start video stream")
+    /// This is now only used for enabling video on an already-active Gemini session.
+    /// Audio is already flowing from startSession(), this just adds video.
     private func startLiveVideoMode() async {
         let log = DebugLogManager.shared
-
-        guard !isLiveVideoMode else {
-            log.log("Already in live video mode, skipping", source: "LiveMode", level: .warning)
-            return
-        }
-
-        guard glassesManager.isRegistered else {
-            log.log("Glasses not connected", source: "LiveMode", level: .error)
-            ttsService.speak("Please connect your glasses first")
-            return
-        }
 
         guard !settingsManager.settings.geminiAPIKey.isEmpty else {
             log.log("No Gemini API key", source: "LiveMode", level: .error)
@@ -968,68 +1007,81 @@ struct VoiceAgentView: View {
             return
         }
 
-        log.log("=== Starting Live Video Mode ===", source: "LiveMode", level: .info)
+        // If not already in a Gemini Live session, start the full pipeline
+        if !isLiveVideoMode {
+            log.log("=== Starting Live Video Mode ===", source: "LiveMode", level: .info)
 
-        // Stop TTS if speaking (does NOT touch audio engine)
-        ttsService.stop()
+            // Setup audio session
+            do {
+                try AudioSessionManager.shared.configure(for: .voiceChat)
+            } catch {
+                log.log("Audio session setup failed: \(error)", source: "LiveMode", level: .error)
+            }
 
-        // Start glasses streaming FIRST — no audio changes yet
-        if !glassesManager.isStreaming {
-            log.log("Starting glasses streaming...", source: "LiveMode", level: .info)
-            await glassesManager.startStreaming()
-            log.log("Glasses streaming started", source: "LiveMode", level: .success)
+            // Stop TTS if speaking
+            ttsService.stop()
+
+            // Ensure VoiceCommandService engine is running
+            if !voiceCommandService.isListening {
+                if voiceCommandService.authorizationStatus == .authorized {
+                    do {
+                        try voiceCommandService.startListening(with: audioPlayback.playerNodeForInjection)
+                    } catch {
+                        log.log("Failed to start voice engine: \(error)", source: "LiveMode", level: .error)
+                    }
+                }
+            }
+
+            // Connect to Gemini Live WebSocket
+            log.log("Connecting to Gemini Live...", source: "LiveMode", level: .network)
+            do {
+                try await geminiLive.connect()
+                log.log("Gemini Live connected", source: "LiveMode", level: .success)
+            } catch {
+                log.log("Gemini connect FAILED: \(error.localizedDescription)", source: "LiveMode", level: .error)
+                errorMessage = "Failed to connect to Gemini Live: \(error.localizedDescription)"
+                return
+            }
+
+            // Setup Gemini Live callbacks
+            setupGeminiLiveCallbacks()
+
+            // Setup audio playback
+            do {
+                try audioPlayback.setup(with: voiceCommandService.activeEngine)
+                log.log("Audio playback ready", source: "LiveMode", level: .success)
+            } catch {
+                log.log("Audio playback setup failed: \(error)", source: "LiveMode", level: .error)
+            }
+
+            // Redirect audio to Gemini
+            audioCapture.onAudioCaptured = { [weak geminiLive] data in
+                geminiLive?.sendAudio(data: data)
+            }
+            voiceCommandService.pauseForGeminiLive { buffer in
+                self.audioCapture.processExternalBuffer(buffer, nativeFormat: buffer.format)
+            }
+            log.log("Audio engine redirected to Gemini", source: "LiveMode", level: .success)
+
+            isLiveVideoMode = true
+            agentState = .liveVideo
+        }
+
+        // Add video streaming if glasses are connected (optional)
+        if glassesManager.isRegistered {
+            if !glassesManager.isStreaming {
+                log.log("Starting glasses streaming...", source: "LiveMode", level: .info)
+                await glassesManager.startStreaming()
+            }
+            glassesManager.onVideoFrame = { [weak geminiLive] image in
+                if let jpegData = image.jpegData(compressionQuality: 0.6) {
+                    geminiLive?.sendVideoFrame(imageData: jpegData)
+                }
+            }
+            log.log("Video frame routing configured", source: "LiveMode", level: .success)
         } else {
-            log.log("Glasses already streaming", source: "LiveMode", level: .debug)
+            log.log("No glasses connected — audio-only mode", source: "LiveMode", level: .info)
         }
-
-        // Connect to Gemini Live WebSocket
-        log.log("Connecting to Gemini Live...", source: "LiveMode", level: .network)
-        do {
-            try await geminiLive.connect()
-            log.log("Gemini Live connected", source: "LiveMode", level: .success)
-        } catch {
-            log.log("Gemini connect FAILED: \(error.localizedDescription)", source: "LiveMode", level: .error)
-            errorMessage = "Failed to connect to Gemini Live: \(error.localizedDescription)"
-            if glassesManager.isStreaming {
-                await glassesManager.stopStreaming()
-            }
-            return
-        }
-
-        // Setup Gemini Live callbacks
-        log.log("Setting up callbacks...", source: "LiveMode", level: .debug)
-        setupGeminiLiveCallbacks()
-
-        // Setup audio playback for Gemini responses using the shared engine
-        do {
-            try audioPlayback.setup(with: voiceCommandService.activeEngine)
-            log.log("Audio playback ready (shared engine)", source: "LiveMode", level: .success)
-        } catch {
-            log.log("Audio playback setup failed: \(error)", source: "LiveMode", level: .error)
-        }
-
-        // CRITICAL: Pause recognition and redirect audio to Gemini
-        log.log("Redirecting audio engine to Gemini...", source: "LiveMode", level: .audio)
-        audioCapture.onAudioCaptured = { [weak geminiLive] data in
-            geminiLive?.sendAudio(data: data)
-        }
-
-        voiceCommandService.pauseForGeminiLive { buffer in
-            let format = buffer.format
-            self.audioCapture.processExternalBuffer(buffer, nativeFormat: format)
-        }
-        log.log("Audio engine redirected", source: "LiveMode", level: .success)
-
-        // Setup video frame routing to Gemini Live
-        glassesManager.onVideoFrame = { [weak geminiLive] image in
-            if let jpegData = image.jpegData(compressionQuality: 0.6) {
-                geminiLive?.sendVideoFrame(imageData: jpegData)
-            }
-        }
-        log.log("Video frame routing configured", source: "LiveMode", level: .success)
-
-        isLiveVideoMode = true
-        agentState = .liveVideo
 
         log.log("=== Live Video Mode ACTIVE ===", source: "LiveMode", level: .success)
         ttsService.speak("Live video mode active")
