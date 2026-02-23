@@ -300,6 +300,18 @@ final class GeminiLiveService: ObservableObject {
                 prompt += "\n- \(key): \(value)"
             }
         }
+        
+        // --- SPATIAL CONTEXT INJECTION ---
+        if let locationContext = LocationManager.shared.contextString {
+            prompt += "\n\nCRITICAL CONTEXT: User's physical location right now is \(locationContext)\n"
+            prompt += "Do not mention the user's coordinates unless asked. Use their location implicitly if they ask about nearby places."
+        
+            if let loc = LocationManager.shared.location {
+                if let nearbyMemories = MemoryManager.shared.getNearbyMemoriesSystemPrompt(currentLocation: loc) {
+                    prompt += "\n\n\(nearbyMemories)"
+                }
+            }
+        }
 
         return prompt
     }

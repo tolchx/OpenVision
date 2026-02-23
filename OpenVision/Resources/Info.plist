@@ -159,5 +159,7 @@
     <string>UIStatusBarStyleLightContent</string>
     <key>UIViewControllerBasedStatusBarAppearance</key>
     <true/>
+    <key>NSLocationWhenInUseUsageDescription</key>
+    <string>OpenVision needs your location to provide the AI with context about the places, businesses, and environment around you.</string>
 </dict>
 </plist>

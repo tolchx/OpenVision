@@ -142,6 +142,10 @@ struct VoiceAgentView: View {
         .onAppear {
             setupVoiceCommandService()
             setupGlassesCallbacks()
+            
+            // Start listening for CoreLocation updates
+            LocationManager.shared.requestLocation()
+            LocationManager.shared.startTracking()
         }
         .onDisappear {
             voiceCommandService.stopListening()
@@ -1008,6 +1012,36 @@ struct VoiceAgentView: View {
                 // Query Gemini Vision for scene description
                 Task { @MainActor in
                     await self.handleDescribeSceneTool(args: args, completion: completion)
+                }
+                
+            case "store_memory", "remember_this":
+                Task { @MainActor in
+                    if let text = args["text"] as? String, let loc = LocationManager.shared.location {
+                        MemoryManager.shared.storeMemory(text: text, location: loc)
+                        completion("[SYSTEM] Memory stored successfully at your current location.")
+                    } else {
+                        completion("[SYSTEM] Failed to store memory. Ensure location is available and text is provided.")
+                    }
+                }
+            
+            case "search_memory", "retrieve_memory", "recall":
+                Task { @MainActor in
+                    if let query = args["query"] as? String {
+                        let results = MemoryManager.shared.searchMemories(query: query)
+                        if results.isEmpty {
+                            completion("[SYSTEM] No memories found matching '\(query)'")
+                        } else {
+                            var response = "[SYSTEM] Found memories matching '\(query)':\n"
+                            let df = DateFormatter()
+                            df.dateStyle = .short
+                            for mem in results {
+                                response += "- On \(df.string(from: mem.timestamp)): \(mem.text)\n"
+                            }
+                            completion(response)
+                        }
+                    } else {
+                        completion("[SYSTEM] Please provide a query string to search.")
+                    }
                 }
 
             default:

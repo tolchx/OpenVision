@@ -415,6 +415,20 @@ final class OpenClawService: ObservableObject {
             ]
             params["attachments"] = [attachment]
         }
+        
+        // --- SPATIAL CONTEXT INJECTION (OpenClaw) ---
+        var contextStr = ""
+        if let locationContext = LocationManager.shared.contextString {
+            contextStr += "User's physical location: \(locationContext)\n"
+            if let loc = LocationManager.shared.location,
+               let nearby = MemoryManager.shared.getNearbyMemoriesSystemPrompt(currentLocation: loc) {
+                contextStr += nearby
+            }
+        }
+        
+        if !contextStr.isEmpty {
+            params["context"] = contextStr
+        }
 
         print("[OpenClaw] Sending message: \(text.prefix(50))...")
 
