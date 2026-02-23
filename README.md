@@ -202,6 +202,18 @@ You: "Stop video"                        → Returns to OpenClaw mode
 
 ---
 
+## Future Roadmap (Upcoming Features)
+
+We are actively building the following features to make OpenVision the ultimate smart glasses companion:
+
+1. **GPS Context Injection**: Transparently passing your coordinates and city to the AI so you can ask *"What is the rating of that restaurant in front of me?"* without explicitly naming it.
+2. **Bidirectional Translator Mode (ES ↔ EN)**: The ultimate travel tool. You speak Spanish (heard via glasses), the AI translates and speaks English out of your iPhone's loudspeaker. The other person replies in English, and the AI translates and whispers the Spanish back into your glasses.
+3. **Long-Term Spatial Memory**: Tell your glasses *"Remember I parked here"*. Hours later ask *"Where did I park?"* and the AI will recall the GPS-tagged memory and photo.
+4. **Proactive Notifications**: Letting the AI interrupt you to read important iOS notifications or calendar events directly through the glasses, without needing a wake word first.
+5. **Offline SLM Execution**: Integrating Llama.cpp or Apple's MLX-Swift to run a small model (~2GB) locally on the iPhone, allowing basic notes and queries even when you have zero cell service.
+
+---
+
 ## AI Backend Comparison
 
 | Feature | OpenClaw | Gemini Live |
