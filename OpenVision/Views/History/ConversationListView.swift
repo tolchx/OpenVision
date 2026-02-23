@@ -157,7 +157,12 @@ struct ConversationRow: View {
                     .foregroundColor(.secondary)
             }
 
-            if let lastMessage = conversation.messages.last {
+            if let summary = conversation.summary {
+                Text(summary)
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                    .lineLimit(2)
+            } else if let lastMessage = conversation.messages.last {
                 Text(lastMessage.content)
                     .font(.subheadline)
                     .foregroundColor(.secondary)

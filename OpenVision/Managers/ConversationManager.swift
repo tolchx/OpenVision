@@ -46,6 +46,9 @@ final class ConversationManager: ObservableObject {
 
     /// Start a new conversation
     func startNewConversation() {
+        // Auto-summarize the previous conversation if it has enough messages and no summary yet
+        attemptSummarizeCurrentConversation()
+
         let conversation = Conversation()
         currentConversation = conversation
         conversations.insert(conversation, at: 0)
@@ -67,6 +70,32 @@ final class ConversationManager: ObservableObject {
         // Start new conversation
         startNewConversation()
         return currentConversation!
+    }
+
+    /// Trigger an auto-summarize of the current conversation if needed
+    func attemptSummarizeCurrentConversation() {
+        if let current = currentConversation, current.summary == nil, current.messages.count > 2 {
+            let convoToSummarize = current
+            Task {
+                if let summary = await SessionSummarizer.shared.summarize(conversation: convoToSummarize) {
+                    await MainActor.run {
+                        self.updateSummary(for: convoToSummarize.id, summary: summary)
+                    }
+                }
+            }
+        }
+    }
+
+    /// Update the summary of an existing conversation
+    func updateSummary(for id: UUID, summary: String) {
+        if let index = conversations.firstIndex(where: { $0.id == id }) {
+            conversations[index].summary = summary
+            if currentConversation?.id == id {
+                currentConversation = conversations[index]
+            }
+            saveConversations()
+            print("[ConversationManager] Auto-summarized conversation: \(id)")
+        }
     }
 
     /// Add a message to the current conversation

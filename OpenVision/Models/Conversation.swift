@@ -10,19 +10,22 @@ struct Conversation: Identifiable, Codable, Equatable {
     var messages: [Message]
     let createdAt: Date
     var lastActivityAt: Date
+    var summary: String?
 
     init(
         id: UUID = UUID(),
         title: String = "New Conversation",
         messages: [Message] = [],
         createdAt: Date = Date(),
-        lastActivityAt: Date = Date()
+        lastActivityAt: Date = Date(),
+        summary: String? = nil
     ) {
         self.id = id
         self.title = title
         self.messages = messages
         self.createdAt = createdAt
         self.lastActivityAt = lastActivityAt
+        self.summary = summary
     }
 
     /// Whether this conversation contains any photos

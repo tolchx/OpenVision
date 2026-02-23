@@ -9,6 +9,7 @@ struct MainTabView: View {
     @EnvironmentObject var settingsManager: SettingsManager
     @EnvironmentObject var glassesManager: GlassesManager
     @EnvironmentObject var conversationManager: ConversationManager
+    @Environment(\.scenePhase) private var scenePhase
 
     // MARK: - State
 
@@ -64,6 +65,12 @@ struct MainTabView: View {
                 // Start a new conversation and dismiss immediately
                 conversationManager.startNewConversation()
                 currentSheet = nil
+            }
+        }
+        .onChange(of: scenePhase) { newPhase in
+            if newPhase == .background {
+                // When app goes to background, attempt to summarize current conversation
+                conversationManager.attemptSummarizeCurrentConversation()
             }
         }
     }
