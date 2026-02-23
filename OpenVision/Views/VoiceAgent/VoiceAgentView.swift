@@ -4,6 +4,7 @@
 import SwiftUI
 import Speech
 import PhotosUI
+import NaturalLanguage
 
 struct VoiceAgentView: View {
     // MARK: - Environment
@@ -270,6 +271,19 @@ struct VoiceAgentView: View {
 
             // Top bar (glasses status + token counter)
             HStack(spacing: 12) {
+                // Translator Toggle
+                Button(action: {
+                    withAnimation {
+                        settingsManager.settings.isTranslationModeActive.toggle()
+                        let generator = UIImpactFeedbackGenerator(style: .light)
+                        generator.impactOccurred()
+                    }
+                }) {
+                    Image(systemName: settingsManager.settings.isTranslationModeActive ? "globe.americas.fill" : "globe")
+                        .foregroundColor(settingsManager.settings.isTranslationModeActive ? .blue : .white.opacity(0.8))
+                        .font(.system(size: 16, weight: .semibold))
+                }
+                
                 // Tokens
                 if conversationManager.approximateTokenCount > 0 {
                     HStack(spacing: 4) {
@@ -1595,6 +1609,24 @@ struct VoiceAgentView: View {
     /// Speak AI response via TTS
     private func speakResponse(_ text: String) {
         guard !text.isEmpty else { return }
+        
+        // --- TRANSLATION ROUTING ---
+        if settingsManager.settings.isTranslationModeActive {
+            if let language = NLLanguageRecognizer.dominantLanguage(for: text) {
+                print("[VoiceAgentView] Detected AI response language: \(language.rawValue)")
+                // If AI speaks English, it's talking to the external person -> iPhone Speaker
+                // If AI speaks Spanish, it's whispering the translation to the wearer -> Glasses
+                if language == .english {
+                    AudioRoutingManager.shared.setRoute(for: .toLoudspeaker)
+                } else {
+                    AudioRoutingManager.shared.setRoute(for: .toGlasses)
+                }
+            }
+        } else {
+            // Ensure we are in default routing when translation mode is off
+            AudioRoutingManager.shared.setRoute(for: .toGlasses)
+        }
+        
         ttsService.speak(text)
     }
 

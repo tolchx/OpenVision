@@ -426,6 +426,22 @@ final class OpenClawService: ObservableObject {
             }
         }
         
+        // --- TRANSLATION MODE INJECTION (OpenClaw) ---
+        if SettingsManager.shared.settings.isTranslationModeActive {
+            contextStr += """
+            \n
+            ## TRANSLATION MODE ACTIVE
+            You are a real-time bilingual interpreter between Spanish and English.
+            The user wearing the smart glasses speaks Spanish.
+            The person they are talking to speaks English.
+
+            RULES:
+            1. If you hear Spanish from the user, you MUST translate and output ONLY the English translation.
+            2. If you hear English from the external speaker, you MUST translate and output ONLY the Spanish translation.
+            3. Only output the direct translation. Do not summarize or add conversational filler.
+            """
+        }
+        
         if !contextStr.isEmpty {
             params["context"] = contextStr
         }

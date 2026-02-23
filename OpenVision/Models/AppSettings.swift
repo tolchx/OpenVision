@@ -76,6 +76,9 @@ struct AppSettings: Codable, Equatable {
 
     /// Key-value memories the AI can read and manage
     var memories: [String: String] = [:]
+    
+    /// Global toggle for Spanish <-> English Bidirectional Translation Mode
+    var isTranslationModeActive: Bool = false
 
     // MARK: - Advanced Settings
 

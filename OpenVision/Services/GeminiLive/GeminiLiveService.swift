@@ -287,6 +287,22 @@ final class GeminiLiveService: ObservableObject {
         - If you receive a system prompt like "[DESCRIBE_SCENE]", proactively describe what's currently visible in the camera: objects, people, text, signs, environment, and anything notable. Keep it to 2-3 sentences max.
         - Focus on what's most useful or interesting to the user.
         """
+        
+        // --- TRANSLATION MODE INJECTION ---
+        if SettingsManager.shared.settings.isTranslationModeActive {
+            prompt += """
+            \n
+            ## TRANSLATION MODE ACTIVE
+            You are a real-time bilingual interpreter between Spanish and English.
+            The user wearing the smart glasses speaks Spanish.
+            The person they are talking to speaks English.
+
+            RULES:
+            1. If you hear Spanish, you MUST translate and speak the response in English.
+            2. If you hear English, you MUST translate and speak the response in Spanish.
+            3. Only output the direct translation. Do not summarize or add conversational filler.
+            """
+        }
 
         let userPrompt = SettingsManager.shared.settings.userPrompt
         if !userPrompt.isEmpty {
