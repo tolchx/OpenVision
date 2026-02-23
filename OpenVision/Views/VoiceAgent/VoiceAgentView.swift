@@ -26,6 +26,7 @@ struct VoiceAgentView: View {
     @StateObject private var soundService = SoundService.shared
     @StateObject private var audioCapture = AudioCaptureService()
     @StateObject private var audioPlayback = AudioPlaybackService()
+    @StateObject private var notificationManager = NotificationManager.shared
     @ObservedObject private var networkMonitor = NetworkMonitor.shared
 
     // MARK: - State
@@ -148,6 +149,9 @@ struct VoiceAgentView: View {
             // Start listening for CoreLocation updates
             LocationManager.shared.requestLocation()
             LocationManager.shared.startTracking()
+            
+            // Request Notification Permissions
+            notificationManager.requestAuthorization()
         }
         .onDisappear {
             voiceCommandService.stopListening()
@@ -297,6 +301,15 @@ struct VoiceAgentView: View {
                     Image(systemName: settingsManager.settings.isTranslationModeActive ? "globe.americas.fill" : "globe")
                         .foregroundColor(settingsManager.settings.isTranslationModeActive ? .blue : .white.opacity(0.8))
                         .font(.system(size: 16, weight: .semibold))
+                }
+                
+                // Debug Notification Test
+                Button(action: {
+                    notificationManager.scheduleTestNotification(in: 5, title: "Meeting Reminder", body: "Design sync starting in 5 minutes.")
+                }) {
+                    Image(systemName: "bell.badge.fill")
+                        .foregroundColor(.yellow.opacity(0.8))
+                        .font(.system(size: 16))
                 }
                 
                 // Tokens
@@ -669,6 +682,7 @@ struct VoiceAgentView: View {
 
         isSessionActive = true
         agentState = .connecting
+        notificationManager.isSessionActive = true
 
         // Configure audio routing for glasses if registered
         configureAudioForGlasses()
@@ -829,6 +843,7 @@ struct VoiceAgentView: View {
         // Set session inactive FIRST to prevent callbacks from processing
         isSessionActive = false
         agentState = .idle
+        notificationManager.isSessionActive = false
 
         // Handle voice command service based on wake word setting
         if settingsManager.settings.wakeWordEnabled {
