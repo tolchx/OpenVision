@@ -53,11 +53,17 @@
 - Live video streaming to Gemini (1fps)
 - Seamless glasses registration via Meta AI app
 
+### Multimodal & Context
+- **Chat Attachments**: Send photos from your phone gallery alongside your voice commands.
+- **Contextual Screenshot OCR**: Take a screenshot on your phone, and OpenVision automatically extracts the text locally using Apple Vision to provide invisible context for your next AI prompt.
+- **Auto-Session Summaries**: Conversations are automatically summarized when completed using a fast LLM pass, making your history easy to browse.
+
 ### Production-Ready
 - Auto-reconnect with exponential backoff (12 attempts)
 - Network monitoring (auto-pause on WiFi drop)
 - App lifecycle handling (suspend/resume connections)
 - Secure credential storage
+- Real-time proxy token counter and voice-activation haptics
 
 ### Zero Hardcoding
 - All API keys configurable in-app
