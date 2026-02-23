@@ -39,6 +39,11 @@ struct VoiceAgentView: View {
     /// Live Video Mode - uses Gemini Live for real-time audio + video
     @State private var isLiveVideoMode = false
 
+    /// Describe Scene timer — periodically asks Gemini to describe what the glasses see
+    @State private var describeSceneTimer: Timer?
+    /// Tracks when the last user interaction happened (to detect silence)
+    @State private var lastInteractionTime = Date()
+
     /// True when voice recognition is ready (audio engine running)
     @State private var isVoiceReady = false
 
@@ -374,6 +379,7 @@ struct VoiceAgentView: View {
         let text = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
         inputText = ""
+        lastInteractionTime = Date()
         
         // Hide keyboard
         UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
@@ -462,6 +468,52 @@ struct VoiceAgentView: View {
         // and the messages now live in the permanent chat history above
         userTranscript = ""
         aiTranscript = ""
+
+        // Reset interaction time (so describe scene timer knows conversation is active)
+        lastInteractionTime = Date()
+    }
+
+    // MARK: - Describe Scene Timer
+
+    /// How many seconds of silence before triggering a scene description
+    private static let describeSceneSilenceThreshold: TimeInterval = 30
+
+    /// Start the periodic describe scene timer (runs every 10s, checks silence threshold)
+    private func startDescribeSceneTimer() {
+        stopDescribeSceneTimer()
+        lastInteractionTime = Date()
+
+        describeSceneTimer = Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { [weak geminiLive, weak glassesManager] _ in
+            Task { @MainActor [weak self] in
+                guard let self = self,
+                      self.isLiveVideoMode,
+                      let geminiLive = geminiLive,
+                      geminiLive.connectionState.isUsable,
+                      !geminiLive.isModelSpeaking,
+                      !geminiLive.isProcessing else { return }
+
+                let silenceDuration = Date().timeIntervalSince(self.lastInteractionTime)
+                guard silenceDuration >= Self.describeSceneSilenceThreshold else { return }
+
+                // Send the latest camera frame for context
+                if let lastFrame = glassesManager?.lastFrame,
+                   let jpegData = lastFrame.jpegData(compressionQuality: 0.6) {
+                    geminiLive.sendVideoFrame(imageData: jpegData)
+                }
+
+                // Ask Gemini to describe the scene
+                try? await geminiLive.sendText("[DESCRIBE_SCENE]")
+                self.lastInteractionTime = Date() // Reset so it doesn't spam
+                DebugLogManager.shared.log("Describe Scene triggered (silence: \(Int(silenceDuration))s)", source: "DescribeScene", level: .info)
+            }
+        }
+        print("[VoiceAgentView] Describe Scene timer started (threshold: \(Self.describeSceneSilenceThreshold)s)")
+    }
+
+    /// Stop the describe scene timer
+    private func stopDescribeSceneTimer() {
+        describeSceneTimer?.invalidate()
+        describeSceneTimer = nil
     }
 
     // MARK: - Actions
@@ -696,6 +748,7 @@ struct VoiceAgentView: View {
         voiceCommandService.onLocalTranscription = { text in
             Task { @MainActor in
                 self.userTranscript = text
+                self.lastInteractionTime = Date()
             }
         }
 
@@ -1084,7 +1137,25 @@ struct VoiceAgentView: View {
         }
 
         log.log("=== Live Video Mode ACTIVE ===", source: "LiveMode", level: .success)
-        ttsService.speak("Live video mode active")
+
+        // Send welcome greeting to Gemini — it will respond with audio through the glasses
+        // so the user immediately knows the system is active
+        Task {
+            // Small delay to let audio pipeline fully stabilize
+            try? await Task.sleep(nanoseconds: 500_000_000)
+            if self.isLiveVideoMode, self.geminiLive.connectionState.isUsable {
+                // Send a current video frame so Gemini can see the scene for context
+                if let lastFrame = self.glassesManager.lastFrame,
+                   let jpegData = lastFrame.jpegData(compressionQuality: 0.6) {
+                    self.geminiLive.sendVideoFrame(imageData: jpegData)
+                }
+                try? await self.geminiLive.sendText("You just connected. Greet the user briefly so they know you're active and can hear them. If you can see something through the camera, mention it very briefly.")
+                log.log("Welcome greeting sent", source: "LiveMode", level: .info)
+            }
+        }
+
+        // Start describe scene timer
+        startDescribeSceneTimer()
     }
 
     /// Stop live video mode - return to OpenClaw
@@ -1095,6 +1166,9 @@ struct VoiceAgentView: View {
         }
 
         print("[VoiceAgentView] Stopping live video mode...")
+
+        // Stop describe scene timer
+        stopDescribeSceneTimer()
 
         // Stop sending audio to Gemini (but don't touch engine)
         audioCapture.onAudioCaptured = nil
