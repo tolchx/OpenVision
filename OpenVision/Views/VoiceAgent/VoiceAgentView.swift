@@ -57,6 +57,9 @@ struct VoiceAgentView: View {
     @State private var selectedPhotoData: Data?
 
     // MARK: - Agent State
+    
+    /// Haptic feedback state
+    @State private var hasPlayedResponseHaptic = false
 
     enum AgentState: Equatable {
         case idle
@@ -254,12 +257,24 @@ struct VoiceAgentView: View {
 
             Spacer()
 
-            // Glasses status
-            HStack(spacing: 8) {
+            // Top bar (glasses status + token counter)
+            HStack(spacing: 12) {
+                // Tokens
+                if conversationManager.approximateTokenCount > 0 {
+                    HStack(spacing: 4) {
+                        Image(systemName: "number")
+                            .font(.system(size: 10, weight: .bold))
+                        Text("\(conversationManager.approximateTokenCount)")
+                            .font(.caption.monospacedDigit())
+                    }
+                    .foregroundColor(.white.opacity(0.8))
+                }
+                
+                // Glasses
                 Image(systemName: "eyeglasses")
-                    .foregroundColor(glassesManager.isRegistered ? .green : .gray)
+                    .foregroundColor(glassesManager.isRegistered ? .green : .white.opacity(0.5))
             }
-            .padding(.horizontal, 12)
+            .padding(.horizontal, 16)
             .padding(.vertical, 8)
             .background(
                 Capsule()
@@ -916,11 +931,24 @@ struct VoiceAgentView: View {
         print("[VoiceAgentView] Voice command callbacks setup complete")
     }
 
+    /// Play a subtle haptic when AI responds
+    private func playResponseHapticIfNeeded() {
+        if !hasPlayedResponseHaptic {
+            hasPlayedResponseHaptic = true
+            let generator = UIImpactFeedbackGenerator(style: .medium)
+            generator.prepare()
+            generator.impactOccurred()
+        }
+    }
+
     /// Setup AI service callbacks for receiving responses
     private func setupAIServiceCallbacks() {
         // OpenClaw callbacks
         OpenClawService.shared.onAgentMessage = { (message: String) in
             print("[VoiceAgentView] Received AI message: \(message.prefix(50))...")
+            
+            // Play haptic on first token/chunk
+            self.playResponseHapticIfNeeded()
 
             // IMPORTANT: Only speak responses when session is active
             // This prevents speaking stale responses after session ends
@@ -983,6 +1011,7 @@ struct VoiceAgentView: View {
 
         // Gemini Live callbacks (for Gemini Live mode, not hybrid)
         GeminiLiveService.shared.onOutputTranscription = { (text: String) in
+            self.playResponseHapticIfNeeded()
             self.aiTranscript += text
         }
 
@@ -1082,6 +1111,9 @@ struct VoiceAgentView: View {
                              "what's in front of me", "describe what you see", "what is this",
                              "what am i looking at", "can you see"]
         let isPhotoCommand = photoKeywords.contains { lowerCommand.contains($0) }
+
+        // Reset haptic state for the new AI response
+        hasPlayedResponseHaptic = false
 
         do {
             switch settingsManager.settings.aiBackend {

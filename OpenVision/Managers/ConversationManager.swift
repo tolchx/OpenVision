@@ -14,6 +14,9 @@ final class ConversationManager: ObservableObject {
 
     /// All conversations
     @Published var conversations: [Conversation] = []
+    
+    /// Estimated token usage for the current conversation
+    @Published var approximateTokenCount: Int = 0
 
     /// Currently active conversation
     @Published var currentConversation: Conversation?
@@ -46,6 +49,7 @@ final class ConversationManager: ObservableObject {
         let conversation = Conversation()
         currentConversation = conversation
         conversations.insert(conversation, at: 0)
+        updateTokenCount()
         saveConversations()
         print("[ConversationManager] Started new conversation: \(conversation.id)")
     }
@@ -76,6 +80,7 @@ final class ConversationManager: ObservableObject {
         }
 
         currentConversation = conversation
+        updateTokenCount()
         saveConversations()
     }
 
@@ -198,5 +203,19 @@ final class ConversationManager: ObservableObject {
         conversations.reduce(0) { sum, conversation in
             sum + conversation.messages.filter { $0.hasPhoto }.count
         }
+    }
+
+    // MARK: - Token Counter
+
+    /// Update the approximate token count based on the current conversation
+    func updateTokenCount() {
+        guard let current = currentConversation else {
+            approximateTokenCount = 0
+            return
+        }
+        
+        // Basic approximation: 1 token ≈ 4 characters
+        let allText = current.messages.map { $0.content }.joined(separator: " ")
+        approximateTokenCount = allText.count / 4
     }
 }
