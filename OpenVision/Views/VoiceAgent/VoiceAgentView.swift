@@ -58,6 +58,9 @@ struct VoiceAgentView: View {
 
     // MARK: - Agent State
     
+    /// Context from a recently taken screenshot, ready to be injected to the next command
+    @State private var ocrContext: String? = nil
+    
     /// Haptic feedback state
     @State private var hasPlayedResponseHaptic = false
 
@@ -145,6 +148,10 @@ struct VoiceAgentView: View {
         }
         .task {
             await requestSpeechAuthorization()
+        }
+        // Observe screenshot notifications
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.userDidTakeScreenshotNotification)) { _ in
+            handleScreenshotTaken()
         }
         // Observe TTS state changes
         .onChange(of: ttsService.isSpeaking) { isSpeaking in
@@ -1095,7 +1102,12 @@ struct VoiceAgentView: View {
                 
                 // If there's a text command, send it too. Often user might just send a photo with no text,
                 // but Gemini Live text requires at least some text or it throws.
-                let textToSend = command.isEmpty && imageData != nil ? "Look at this photo." : command
+                var textToSend = command.isEmpty && imageData != nil ? "Look at this photo." : command
+                if let context = ocrContext {
+                    textToSend = "Context from my recent phone screenshot (do not mention unless relevant): \"\(context)\"\n\nUser command: \(textToSend)"
+                    await MainActor.run { self.ocrContext = nil }
+                }
+
                 try await geminiLive.sendText(textToSend)
             } catch {
                 print("[VoiceAgentView] Failed to send to Gemini Live: \(error)")
@@ -1116,15 +1128,21 @@ struct VoiceAgentView: View {
         hasPlayedResponseHaptic = false
 
         do {
+            var textToSend = command.isEmpty && imageData != nil ? "Look at this photo." : command
+            if let context = ocrContext {
+                textToSend = "Context from my recent phone screenshot (do not mention unless relevant): \"\(context)\"\n\nUser command: \(textToSend)"
+                await MainActor.run { self.ocrContext = nil }
+            }
+
             switch settingsManager.settings.aiBackend {
             case .openClaw:
                 if isPhotoCommand && imageData == nil {
                     print("[VoiceAgentView] Photo command detected, capturing from glasses...")
-                    await captureAndSendPhoto(withPrompt: command)
+                    // Send textToSend so OpenClaw gets the OCR context if attached
+                    await captureAndSendPhoto(withPrompt: textToSend)
                 } else {
                     // Send text and optional attached image
                     conversationManager.addUserMessage(command, photoData: imageData)
-                    let textToSend = command.isEmpty && imageData != nil ? "Look at this photo." : command
                     try await OpenClawService.shared.sendMessage(textToSend, imageData: imageData)
                 }
 
@@ -1135,7 +1153,6 @@ struct VoiceAgentView: View {
                 if let attachedData = imageData {
                     geminiLive.sendVideoFrame(imageData: attachedData)
                 }
-                let textToSend = command.isEmpty && imageData != nil ? "Look at this photo." : command
                 try await GeminiLiveService.shared.sendText(textToSend)
             }
         } catch {
@@ -1454,6 +1471,56 @@ struct VoiceAgentView: View {
 
         print("[VoiceAgentView] Photo capture timed out")
         return nil
+    }
+
+    // MARK: - Screen OCR Integration
+
+    /// Fetches the latest screenshot from the Photo Library and runs OCR
+    private func handleScreenshotTaken() {
+        print("[VoiceAgentView] Screenshot detected, starting OCR context capture...")
+        
+        Task {
+            // First time this runs, it will prompt the user for Photos access.
+            let status = await PHPhotoLibrary.requestAuthorization(for: .readWrite)
+            guard status == .authorized || status == .limited else {
+                print("[VoiceAgentView] Photo library access denied.")
+                return
+            }
+            
+            let fetchOptions = PHFetchOptions()
+            fetchOptions.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: false)]
+            fetchOptions.fetchLimit = 1
+            
+            let result = PHAsset.fetchAssets(with: .image, options: fetchOptions)
+            guard let latestAsset = result.firstObject else { return }
+            
+            let options = PHImageRequestOptions()
+            options.isSynchronous = false
+            options.deliveryMode = .highQualityFormat
+            
+            PHImageManager.default().requestImage(for: latestAsset, targetSize: PHImageManagerMaximumSize, contentMode: .default, options: options) { image, _ in
+                guard let image = image else { return }
+                
+                Task {
+                    do {
+                        let text = try await OCRService.shared.extractText(from: image)
+                        if !text.isEmpty {
+                            await MainActor.run {
+                                self.ocrContext = text
+                                print("[VoiceAgentView] OCR Context captured successfully! (\(text.count) chars)")
+                                
+                                // Provide distinct haptic to tell user context is loaded
+                                let generator = UINotificationFeedbackGenerator()
+                                generator.prepare()
+                                generator.notificationOccurred(.success)
+                            }
+                        }
+                    } catch {
+                        print("[VoiceAgentView] OCR extraction failed: \(error)")
+                    }
+                }
+            }
+        }
     }
 
     // MARK: - Glasses Video Integration
