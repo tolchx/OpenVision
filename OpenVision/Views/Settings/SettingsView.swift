@@ -108,6 +108,27 @@ struct SettingsView: View {
                 } header: {
                     Text("Advanced")
                 }
+                
+                // Offline AI Section
+                Section {
+                    NavigationLink {
+                        ModelDownloaderSettingsView()
+                    } label: {
+                        HStack {
+                            Label("Offline AI Model", systemImage: "network.slash")
+                            Spacer()
+                            if settingsManager.settings.localModelFileName != nil {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .foregroundColor(.green)
+                            } else {
+                                Text("Not Installed")
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                    }
+                } header: {
+                    Text("Offline Capabilities")
+                }
 
                 // About Section
                 Section {

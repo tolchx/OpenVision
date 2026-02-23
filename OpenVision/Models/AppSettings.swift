@@ -90,6 +90,9 @@ struct AppSettings: Codable, Equatable {
 
     /// Video frame rate for Gemini Live (frames per second)
     var geminiVideoFPS: Int = 1
+    
+    /// The filename of the active SLM file in the Documents directory
+    var localModelFileName: String? = nil
 
     // MARK: - Computed Properties
 

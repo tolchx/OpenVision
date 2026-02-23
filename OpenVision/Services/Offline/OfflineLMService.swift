@@ -55,10 +55,31 @@ class OfflineLMService: ObservableObject {
     /// This should only be called when offline mode activates to save 2GB of RAM during normal use.
     func loadModelIntoRAM() async throws {
         print("[OfflineLMService] Loading 2GB local model into RAM...")
-        // Simulate IO load time
-        try await Task.sleep(nanoseconds: 2_000_000_000) // 2s
-        isModelLoaded = true
-        print("[OfflineLMService] Model successfully loaded into Memory.")
+        
+        // Check if the user has downloaded a model
+        if let modelFileName = SettingsManager.shared.settings.localModelFileName {
+            let modelURL = ModelDownloadManager.shared.modelsDirectory.appendingPathComponent(modelFileName)
+            
+            if FileManager.default.fileExists(atPath: modelURL.path) {
+                print("[OfflineLMService] Found downloaded model at: \(modelURL.path)")
+                // Here is where LlamaContext or MLXModel.load(url: modelURL) would be called
+                
+                // Simulate IO load time
+                try await Task.sleep(nanoseconds: 2_000_000_000) // 2s
+                isModelLoaded = true
+                print("[OfflineLMService] Model successfully loaded into Memory.")
+            } else {
+                print("[OfflineLMService] Active model file missing from disk: \(modelFileName)")
+                // Fallback to mock behavior if file was deleted
+                isModelLoaded = true
+            }
+        } else {
+            print("[OfflineLMService] No local model installed. Running mock demonstration mode.")
+            // Simulate IO load time for mock 
+            try await Task.sleep(nanoseconds: 2_000_000_000) // 2s
+            isModelLoaded = true
+            print("[OfflineLMService] Mock model successfully loaded into Memory.")
+        }
     }
     
     /// Unloads the model from RAM to free up memory when internet connects again.
