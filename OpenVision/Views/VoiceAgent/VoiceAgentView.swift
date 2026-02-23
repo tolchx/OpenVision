@@ -512,6 +512,7 @@ struct VoiceAgentView: View {
         .animation(.spring(response: 0.3), value: inputText)
         .animation(.spring(response: 0.3), value: selectedPhotoData)
     }
+}
     
     private func submitTextCommand() {
         let text = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
