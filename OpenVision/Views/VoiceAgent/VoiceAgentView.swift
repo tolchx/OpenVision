@@ -26,6 +26,7 @@ struct VoiceAgentView: View {
     @StateObject private var soundService = SoundService.shared
     @StateObject private var audioCapture = AudioCaptureService()
     @StateObject private var audioPlayback = AudioPlaybackService()
+    @ObservedObject private var networkMonitor = NetworkMonitor.shared
 
     // MARK: - State
 
@@ -221,6 +222,20 @@ struct VoiceAgentView: View {
                 }
             case .processing:
                 agentState = .thinking
+            }
+        }
+        // Observe Network changes to fallback gracefully during active sessions
+        .onChange(of: networkMonitor.isConnected) { isConnected in
+            if !isConnected && isSessionActive {
+                print("[VoiceAgentView] Network lost during active session. Switching to offline mode.")
+                if isLiveVideoMode {
+                    Task { await stopLiveVideoMode() }
+                }
+                ttsService.speak("Network connection lost. I am now operating in offline mode.")
+            } else if isConnected && isSessionActive {
+                print("[VoiceAgentView] Network restored. Returning to cloud mode.")
+                ttsService.speak("Network connection restored. Cloud mode active.")
+                OfflineLMService.shared.unloadToFreeMemory()
             }
         }
     }
@@ -1180,6 +1195,23 @@ struct VoiceAgentView: View {
             if let context = ocrContext {
                 textToSend = "Context from my recent phone screenshot (do not mention unless relevant): \"\(context)\"\n\nUser command: \(textToSend)"
                 await MainActor.run { self.ocrContext = nil }
+            }
+            
+            // --- OFFLINE SLM FALLBACK ---
+            if !NetworkMonitor.shared.isConnected {
+                print("[VoiceAgentView] Network disconnected. Falling back to OfflineLMService.")
+                conversationManager.addUserMessage(command, photoData: imageData)
+                
+                // Route to local small language model
+                let response = try await OfflineLMService.shared.generateResponse(for: textToSend)
+                
+                self.aiTranscript = response
+                conversationManager.addAssistantMessage(response)
+                speakResponse(response)
+                
+                // Restore agent state
+                agentState = isSessionActive ? .listening : .idle
+                return
             }
 
             switch settingsManager.settings.aiBackend {
