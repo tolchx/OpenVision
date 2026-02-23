@@ -3,6 +3,7 @@
 
 import SwiftUI
 import Speech
+import PhotosUI
 
 struct VoiceAgentView: View {
     // MARK: - Environment
@@ -50,6 +51,10 @@ struct VoiceAgentView: View {
 
     /// Text input for manual chatting
     @State private var inputText = ""
+    
+    /// Photo attachment
+    @State private var selectedPhotoItem: PhotosPickerItem?
+    @State private var selectedPhotoData: Data?
 
     // MARK: - Agent State
 
@@ -318,8 +323,72 @@ struct VoiceAgentView: View {
     // MARK: - Text Input Box & Compact Mic
 
     private var textInputBox: some View {
-        HStack(spacing: 12) {
-            // Text Field
+        VStack(spacing: 8) {
+            // Selected Photo Preview
+            if let photoData = selectedPhotoData, let uiImage = UIImage(data: photoData) {
+                HStack {
+                    ZStack(alignment: .topTrailing) {
+                        Image(uiImage: uiImage)
+                            .resizable()
+                            .scaledToFill()
+                            .frame(width: 60, height: 60)
+                            .clipShape(RoundedRectangle(cornerRadius: 12))
+                            .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.white.opacity(0.2), lineWidth: 1))
+                        
+                        Button {
+                            selectedPhotoData = nil
+                            selectedPhotoItem = nil
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundColor(.white)
+                                .background(Color.black.opacity(0.5))
+                                .clipShape(Circle())
+                        }
+                        .offset(x: 5, y: -5)
+                    }
+                    Spacer()
+                }
+                .padding(.horizontal, 8)
+                .transition(.scale.combined(with: .opacity))
+            }
+
+            HStack(spacing: 12) {
+                // Photo Picker
+                PhotosPicker(selection: $selectedPhotoItem, matching: .images) {
+                    Image(systemName: "photo")
+                        .font(.system(size: 20))
+                        .foregroundColor(selectedPhotoData != nil ? .blue : .white.opacity(0.8))
+                }
+                .onChange(of: selectedPhotoItem) { newItem in
+                    Task {
+                        if let data = try? await newItem?.loadTransferable(type: Data.self) {
+                            // Resize image down to reduce payload size (max 800px)
+                            if let uiImage = UIImage(data: data) {
+                                let maxSize: CGFloat = 800
+                                let size = uiImage.size
+                                let ratio = min(maxSize/size.width, maxSize/size.height)
+                                
+                                if ratio < 1.0 {
+                                    let newSize = CGSize(width: size.width * ratio, height: size.height * ratio)
+                                    UIGraphicsBeginImageContextWithOptions(newSize, false, 1.0)
+                                    uiImage.draw(in: CGRect(origin: .zero, size: newSize))
+                                    let resizedImage = UIGraphicsGetImageFromCurrentImageContext()
+                                    UIGraphicsEndImageContext()
+                                    
+                                    await MainActor.run {
+                                        self.selectedPhotoData = resizedImage?.jpegData(compressionQuality: 0.7)
+                                    }
+                                } else {
+                                    await MainActor.run {
+                                        self.selectedPhotoData = uiImage.jpegData(compressionQuality: 0.7)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Text Field
             TextField("Message or command...", text: $inputText)
                 .padding(.horizontal, 16)
                 .padding(.vertical, 14)
@@ -373,12 +442,22 @@ struct VoiceAgentView: View {
             }
         }
         .animation(.spring(response: 0.3), value: inputText)
+        .animation(.spring(response: 0.3), value: selectedPhotoData)
     }
     
     private func submitTextCommand() {
         let text = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty else { return }
+        let hasPhoto = selectedPhotoData != nil
+        
+        guard !text.isEmpty || hasPhoto else { return }
+        
+        // Capture data and clear UI
+        let commandText = text
+        let imageData = selectedPhotoData
+        
         inputText = ""
+        selectedPhotoItem = nil
+        selectedPhotoData = nil
         lastInteractionTime = Date()
         
         // Hide keyboard
@@ -402,8 +481,8 @@ struct VoiceAgentView: View {
             // Wait an extra beat for websocket/engine internals to stabilize
             try? await Task.sleep(nanoseconds: 300_000_000)
 
-            // Process the command as if it was spoken
-            await sendCommand(text)
+            // Process the command as if it was spoken (with optional photo)
+            await sendCommand(commandText, imageData: imageData)
         }
     }
 
@@ -933,74 +1012,62 @@ struct VoiceAgentView: View {
     }
 
     /// Send command to AI backend
-    private func sendCommand(_ command: String) async {
+    private func sendCommand(_ command: String, imageData: Data? = nil) async {
         let lowerCommand = command.lowercased()
 
-        // Check for "stop" command - stops TTS and waits for next command
+        // Check for "stop" command - stops TTS and waits for next command...
         let stopKeywords = ["stop", "be quiet", "shut up", "silence", "quiet", "enough", "ok stop", "okay stop"]
         let isStopCommand = stopKeywords.contains { lowerCommand.contains($0) } &&
                            !lowerCommand.contains("video") && !lowerCommand.contains("stream")
 
         if isStopCommand {
             print("[VoiceAgentView] Stop command detected - stopping TTS")
-            // Stop TTS
             ttsService.stop()
-            // Stop audio playback (for Gemini Live)
             audioPlayback.stop()
-            // Interrupt AI if processing
             Task {
                 switch settingsManager.settings.aiBackend {
-                case .openClaw:
-                    await OpenClawService.shared.interrupt()
-                case .geminiLive:
-                    await GeminiLiveService.shared.interrupt()
+                case .openClaw: await OpenClawService.shared.interrupt()
+                case .geminiLive: await GeminiLiveService.shared.interrupt()
                 }
             }
-            // Stay in listening mode
             agentState = .listening
             aiTranscript = ""
             return
         }
 
-        // Check for live video mode commands
-        let startLiveKeywords = ["start video stream", "start live video", "start video", "start streaming",
-                                 "enable video", "live mode", "go live", "video mode"]
-        let stopLiveKeywords = ["stop video stream", "stop live video", "stop video", "stop streaming",
-                               "disable video", "end live mode", "exit video mode", "stop live"]
+        // Check for live video mode commands...
+        let startLiveKeywords = ["start video stream", "start live video", "start video", "start streaming", "enable video", "live mode", "go live", "video mode"]
+        let stopLiveKeywords = ["stop video stream", "stop live video", "stop video", "stop streaming", "disable video", "end live mode", "exit video mode", "stop live"]
 
-        let isStartLiveCommand = startLiveKeywords.contains { lowerCommand.contains($0) }
-        let isStopLiveCommand = stopLiveKeywords.contains { lowerCommand.contains($0) }
-
-        // Handle live video mode commands
-        if isStartLiveCommand {
+        if startLiveKeywords.contains(where: { lowerCommand.contains($0) }) {
             print("[VoiceAgentView] Starting live video mode...")
             await startLiveVideoMode()
             return
         }
 
-        if isStopLiveCommand {
+        if stopLiveKeywords.contains(where: { lowerCommand.contains($0) }) {
             print("[VoiceAgentView] Stopping live video mode...")
             await stopLiveVideoMode()
             return
         }
 
-        // If in live video mode, Gemini handles everything - don't process here
+        // If in live video mode, Gemini handles everything directly.
         if isLiveVideoMode {
-            // Gemini Live is handling audio directly, so this shouldn't be reached
-            // But if text is sent via the text input box, we send it directly to Gemini
-            
-            // Persist the user's text message to chat history immediately
-            conversationManager.addUserMessage(command)
+            conversationManager.addUserMessage(command, photoData: imageData)
             userTranscript = ""
             
             do {
-                // If they ask what we see in text, explicitly feed the most recent camera frame 
-                // in real time so the text question isn't blind and gets the immediate context
-                if let lastFrame = glassesManager.lastFrame, let jpegData = lastFrame.jpegData(compressionQuality: 0.6) {
+                // Determine which image to send: user-attached photo OR latest glasses frame
+                if let attachedData = imageData {
+                    geminiLive.sendVideoFrame(imageData: attachedData)
+                } else if let lastFrame = glassesManager.lastFrame, let jpegData = lastFrame.jpegData(compressionQuality: 0.6) {
                     geminiLive.sendVideoFrame(imageData: jpegData)
                 }
-
-                try await geminiLive.sendText(command)
+                
+                // If there's a text command, send it too. Often user might just send a photo with no text,
+                // but Gemini Live text requires at least some text or it throws.
+                let textToSend = command.isEmpty && imageData != nil ? "Look at this photo." : command
+                try await geminiLive.sendText(textToSend)
             } catch {
                 print("[VoiceAgentView] Failed to send to Gemini Live: \(error)")
             }
@@ -1009,36 +1076,35 @@ struct VoiceAgentView: View {
 
         agentState = .thinking
 
-        // Check if this is a vision-related command
-        // Keywords for "take a photo" - capture and send to OpenClaw
         let photoKeywords = ["take a photo", "take a picture", "take photo", "take picture",
-                            "capture a photo", "capture photo", "snap a photo", "snap a picture",
-                            "what do you see", "what are you looking at", "look at this",
-                            "what's in front of me", "describe what you see", "what is this",
-                            "what am i looking at", "can you see"]
-
+                             "capture a photo", "capture photo", "snap a photo", "snap a picture",
+                             "what do you see", "what are you looking at", "look at this",
+                             "what's in front of me", "describe what you see", "what is this",
+                             "what am i looking at", "can you see"]
         let isPhotoCommand = photoKeywords.contains { lowerCommand.contains($0) }
 
         do {
             switch settingsManager.settings.aiBackend {
             case .openClaw:
-                if isPhotoCommand {
-                    // Capture photo and send with command
-                    print("[VoiceAgentView] Photo command detected, capturing...")
+                if isPhotoCommand && imageData == nil {
+                    print("[VoiceAgentView] Photo command detected, capturing from glasses...")
                     await captureAndSendPhoto(withPrompt: command)
                 } else {
-                    // Regular command - send as-is
-                    try await OpenClawService.shared.sendMessage(command)
+                    // Send text and optional attached image
+                    conversationManager.addUserMessage(command, photoData: imageData)
+                    let textToSend = command.isEmpty && imageData != nil ? "Look at this photo." : command
+                    try await OpenClawService.shared.sendMessage(textToSend, imageData: imageData)
                 }
-                // State updates handled by callbacks
 
             case .geminiLive:
-                // Persist user message to chat history immediately
-                conversationManager.addUserMessage(command)
+                conversationManager.addUserMessage(command, photoData: imageData)
                 userTranscript = ""
                 
-                try await GeminiLiveService.shared.sendText(command)
-                // Gemini Live handles response streaming via callbacks
+                if let attachedData = imageData {
+                    geminiLive.sendVideoFrame(imageData: attachedData)
+                }
+                let textToSend = command.isEmpty && imageData != nil ? "Look at this photo." : command
+                try await GeminiLiveService.shared.sendText(textToSend)
             }
         } catch {
             errorMessage = "Failed to send command: \(error.localizedDescription)"

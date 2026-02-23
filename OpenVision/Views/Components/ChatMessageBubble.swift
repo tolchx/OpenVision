@@ -29,17 +29,29 @@ struct ChatMessageBubble: View {
             }
             
             // Bubble Content
-            Text(message.content)
-                .font(.body)
-                .foregroundColor(.white)
-                .padding(.horizontal, 16)
-                .padding(.vertical, 12)
-                .background(
-                    GlassCard(
-                        cornerRadius: 20,
-                        opacity: message.role == .user ? 0.2 : 0.1
-                    )
+            VStack(alignment: message.role == .user ? .trailing : .leading, spacing: 8) {
+                if let data = message.photoData, let uiImage = UIImage(data: data) {
+                    Image(uiImage: uiImage)
+                        .resizable()
+                        .scaledToFill()
+                        .frame(maxWidth: 200)
+                        .frame(height: 150)
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                }
+                
+                if !message.content.isEmpty {
+                    Text(message.content)
+                        .font(.body)
+                }
+            }
+            .foregroundColor(.white)
+            .padding(message.photoData != nil ? 8 : 16)
+            .background(
+                GlassCard(
+                    cornerRadius: 20,
+                    opacity: message.role == .user ? 0.2 : 0.1
                 )
+            )
                 .overlay(
                     RoundedRectangle(cornerRadius: 20)
                         .stroke(
