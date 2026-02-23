@@ -632,9 +632,8 @@ struct VoiceAgentView: View {
         lastInteractionTime = Date()
 
         describeSceneTimer = Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { [weak geminiLive, weak glassesManager] _ in
-            Task { @MainActor [weak self] in
-                guard let self = self,
-                      self.isLiveVideoMode,
+            Task { @MainActor in
+                guard self.isLiveVideoMode,
                       let geminiLive = geminiLive,
                       geminiLive.connectionState.isUsable,
                       !geminiLive.isModelSpeaking,

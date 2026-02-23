@@ -71,6 +71,11 @@ final class SoundService: ObservableObject {
         }
     }
 
+    /// Alias for playWakeWordSound used by NotificationManager
+    func playStartListeningSound() {
+        playWakeWordSound()
+    }
+
     // MARK: - Thinking Sound
 
     func startThinkingSound() {

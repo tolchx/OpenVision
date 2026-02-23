@@ -9,7 +9,7 @@ class SessionSummarizer {
     private init() {}
     
     func summarize(conversation: Conversation) async -> String? {
-        let apiKey = SettingsManager.shared.settings.geminiAPIKey
+        let apiKey = await SettingsManager.shared.settings.geminiAPIKey
         guard !apiKey.isEmpty else { return nil }
         
         // Limit to reasonable length to avoid huge payload, but keep enough context

@@ -18,7 +18,7 @@ class AudioRoutingManager {
     func setRoute(for direction: TranslationDirection) {
         do {
             // Ensure the category allows playback and recording with Bluetooth
-            try session.setCategory(.playAndRecord, mode: .voiceChat, options: [.allowBluetooth, .allowBluetoothA2DP, .defaultToSpeaker])
+            try session.setCategory(.playAndRecord, mode: .voiceChat, options: [.allowBluetoothHFP, .allowBluetoothA2DP, .defaultToSpeaker])
             
             switch direction {
             case .toLoudspeaker:

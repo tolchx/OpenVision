@@ -24,7 +24,7 @@ class OfflineLMService: ObservableObject {
         
         print("[OfflineLMService] Generating local response for: '\(prompt)'")
         
-        let systemPrompt = """
+        let _systemPrompt = """
         You are an offline assistant running locally on a smart-glasses device.
         You do not have internet access. Keep answers strictly under 2 sentences.
         """
