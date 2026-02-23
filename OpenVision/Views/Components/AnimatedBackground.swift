@@ -163,11 +163,13 @@ struct ParticleEffect: View {
 
     private func startAnimation(size: CGSize) {
         Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { _ in
-            for i in particles.indices {
-                particles[i].y -= particles[i].speed
-                if particles[i].y < 0 {
-                    particles[i].y = 1
-                    particles[i].x = CGFloat.random(in: 0...1)
+            Task { @MainActor in
+                for i in particles.indices {
+                    particles[i].y -= particles[i].speed
+                    if particles[i].y < 0 {
+                        particles[i].y = 1
+                        particles[i].x = CGFloat.random(in: 0...1)
+                    }
                 }
             }
         }

@@ -25,6 +25,7 @@ final class VoiceCommandService: ObservableObject {
     @Published var isListening: Bool = false
     @Published var currentTranscription: String = ""
     @Published var authorizationStatus: SFSpeechRecognizerAuthorizationStatus = .notDetermined
+    @Published var microphonePermission: AVAudioSession.RecordPermission = .undetermined
 
     // MARK: - Listening State
 
@@ -119,8 +120,25 @@ final class VoiceCommandService: ObservableObject {
 
     // MARK: - Authorization
 
-    /// Request speech recognition authorization
+    /// Request speech recognition and microphone authorization
     func requestAuthorization() async -> Bool {
+        // 1. Request Microphone Permission
+        let micGranted = await withCheckedContinuation { continuation in
+            AVAudioSession.sharedInstance().requestRecordPermission { granted in
+                continuation.resume(returning: granted)
+            }
+        }
+        
+        await MainActor.run {
+            self.microphonePermission = AVAudioSession.sharedInstance().recordPermission
+        }
+        
+        guard micGranted else {
+            print("[VoiceCommand] Microphone permission denied")
+            return false
+        }
+
+        // 2. Request Speech Recognition Permission
         return await withCheckedContinuation { continuation in
             SFSpeechRecognizer.requestAuthorization { status in
                 Task { @MainActor in
@@ -139,6 +157,10 @@ final class VoiceCommandService: ObservableObject {
         guard authorizationStatus == .authorized else {
             throw VoiceCommandError.notAuthorized
         }
+        
+        guard AVAudioSession.sharedInstance().recordPermission == .granted else {
+            throw VoiceCommandError.micPermissionDenied
+        }
 
         guard !isListening else { return }
 
@@ -153,13 +175,16 @@ final class VoiceCommandService: ObservableObject {
         if let playerNode = sharedPlayerNode {
             audioEngine.attach(playerNode)
             // Need a float32 format for playback compatibility
-            let playerFormat = AVAudioFormat(
+            if let playerFormat = AVAudioFormat(
                 commonFormat: .pcmFormatFloat32,
                 sampleRate: Double(Constants.GeminiLive.outputSampleRate),
                 channels: 1, // Mono
                 interleaved: false
-            )!
-            audioEngine.connect(playerNode, to: audioEngine.mainMixerNode, format: playerFormat)
+            ) {
+                audioEngine.connect(playerNode, to: audioEngine.mainMixerNode, format: playerFormat)
+            } else {
+                print("[VoiceCommand] Warning: Could not create player format for shared node")
+            }
         }
 
         // Create recognition request
@@ -174,7 +199,13 @@ final class VoiceCommandService: ObservableObject {
 
         // Get input node
         let inputNode = audioEngine.inputNode
+        
+        // Critical: Check if input node can provide format
+        // This can crash on physical devices if mic permission is missing
         let recordingFormat = inputNode.outputFormat(forBus: 0)
+        guard recordingFormat.sampleRate > 0 else {
+            throw VoiceCommandError.invalidInputFormat
+        }
 
         // Install unified tap
         inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { [weak self] buffer, _ in
@@ -768,12 +799,16 @@ enum VoiceCommandError: LocalizedError {
     case notAuthorized
     case audioEngineUnavailable
     case requestCreationFailed
+    case micPermissionDenied
+    case invalidInputFormat
 
     var errorDescription: String? {
         switch self {
         case .notAuthorized: return "Speech recognition not authorized"
         case .audioEngineUnavailable: return "Audio engine unavailable"
         case .requestCreationFailed: return "Failed to create speech recognition request"
+        case .micPermissionDenied: return "Microphone access denied. Please enable in Settings."
+        case .invalidInputFormat: return "Invalid audio input format"
         }
     }
 }

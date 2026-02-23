@@ -41,6 +41,12 @@ final class AudioSessionManager {
 
     /// Configure audio session for specified mode
     func configure(for mode: AudioMode) throws {
+        // Safe-guard: Don't configure if mic permission is denied
+        guard AVAudioSession.sharedInstance().recordPermission == .granted else {
+            print("[AudioSession] Skipping configuration: Microphone permission not granted")
+            return
+        }
+        
         guard mode != currentMode else { return }
 
         switch mode {

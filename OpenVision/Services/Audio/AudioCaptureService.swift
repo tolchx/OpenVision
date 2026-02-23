@@ -142,6 +142,10 @@ final class AudioCaptureService: ObservableObject {
             bufferToProcess = buffer
         }
 
+        // --- NEW SAFETY CHECK ---
+        // Ensure we actually have frames to process to avoid downstream math crashes
+        guard bufferToProcess.frameLength > 0 else { return }
+        
         // 3. Compute Audio Level (RMS)
         let rms = computeRMS(bufferToProcess)
         Task { @MainActor in
