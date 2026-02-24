@@ -768,7 +768,10 @@ struct VoiceAgentView: View {
                 }
 
             } catch {
-                errorMessage = "Failed to connect: \(error.localizedDescription)"
+                let msg = "Failed to connect: \(error.localizedDescription)"
+                print("[VoiceAgentView] \(msg)")
+                DebugLogManager.shared.log(msg, source: "Connection", level: .error)
+                errorMessage = msg
                 isSessionActive = false
                 agentState = .idle
             }
@@ -1335,13 +1338,24 @@ struct VoiceAgentView: View {
             if !glassesManager.isStreaming {
                 log.log("Starting glasses streaming...", source: "LiveMode", level: .info)
                 await glassesManager.startStreaming()
-            }
-            glassesManager.onVideoFrame = { [weak geminiLive] image in
-                if let jpegData = image.jpegData(compressionQuality: 0.6) {
-                    geminiLive?.sendVideoFrame(imageData: jpegData)
+                
+                // Verify if streaming actually started (permissions might have failed)
+                if !glassesManager.isStreaming {
+                    log.log("Glasses streaming failed to start (likely permission denied)", source: "LiveMode", level: .error)
+                    if let error = glassesManager.errorMessage {
+                        ttsService.speak(error)
+                    }
                 }
             }
-            log.log("Video frame routing configured", source: "LiveMode", level: .success)
+            
+            if glassesManager.isStreaming {
+                glassesManager.onVideoFrame = { [weak geminiLive] image in
+                    if let jpegData = image.jpegData(compressionQuality: 0.6) {
+                        geminiLive?.sendVideoFrame(imageData: jpegData)
+                    }
+                }
+                log.log("Video frame routing configured", source: "LiveMode", level: .success)
+            }
         } else {
             log.log("No glasses connected — audio-only mode", source: "LiveMode", level: .info)
         }
