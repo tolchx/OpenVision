@@ -132,7 +132,7 @@ final class GlassesManager: ObservableObject {
 
         print("[GlassesManager] Starting camera stream for device: \(deviceId)")
 
-        // Request camera and microphone permissions (like xmeta does)
+        // Request camera permission (like xmeta does)
         do {
             // Check Camera
             var cameraStatus = try await wearables.checkPermissionStatus(.camera)
@@ -144,19 +144,9 @@ final class GlassesManager: ObservableObject {
                 print("[GlassesManager] After request, camera status: \(cameraStatus)")
             }
 
-            // Check Microphone (MWDAT specific)
-            var micStatus = try await wearables.checkPermissionStatus(.microphone)
-            print("[GlassesManager] Microphone MWDAT permission status: \(micStatus)")
-
-            if micStatus != .granted {
-                print("[GlassesManager] Requesting microphone MWDAT permission...")
-                micStatus = try await wearables.requestPermission(.microphone)
-                print("[GlassesManager] After request, microphone status: \(micStatus)")
-            }
-
-            guard cameraStatus == .granted && micStatus == .granted else {
-                errorMessage = "Camera or Microphone MWDAT permission denied"
-                print("[GlassesManager] MWDAT permissions not fully granted (Camera: \(cameraStatus), Mic: \(micStatus))")
+            guard cameraStatus == .granted else {
+                errorMessage = "Camera MWDAT permission denied"
+                print("[GlassesManager] MWDAT camera permission not granted")
                 return
             }
         } catch {

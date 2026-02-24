@@ -1,7 +1,7 @@
 // OpenVision - AudioCaptureService.swift
 // Captures audio from microphone using AVAudioEngine
 
-import AVFoundation
+@preconcurrency import AVFoundation
 
 /// Captures audio from microphone
 @MainActor
