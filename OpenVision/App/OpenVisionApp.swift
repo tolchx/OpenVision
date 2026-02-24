@@ -8,9 +8,9 @@ import MWDATCore
 struct OpenVisionApp: App {
     // MARK: - State Objects
 
-    @StateObject private var settingsManager = SettingsManager.shared
-    @StateObject private var glassesManager = GlassesManager.shared
-    @StateObject private var conversationManager = ConversationManager.shared
+    @StateObject private var settingsManager: SettingsManager
+    @StateObject private var glassesManager: GlassesManager
+    @StateObject private var conversationManager: ConversationManager
 
     // MARK: - App Storage
 
@@ -19,14 +19,20 @@ struct OpenVisionApp: App {
     // MARK: - Initialization
 
     init() {
-        // Initialize Meta Wearables SDK
+        // 1. Initialize Meta Wearables SDK FIRST
         do {
             try Wearables.configure()
             print("[OpenVisionApp] Wearables SDK configured")
         } catch {
             print("[OpenVisionApp] Failed to configure Wearables SDK: \(error)")
         }
-        print("[OpenVisionApp] Initialized")
+
+        // 2. Initialize Managers SECONELY (guarantees SDK is ready)
+        self._settingsManager = StateObject(wrappedValue: SettingsManager.shared)
+        self._glassesManager = StateObject(wrappedValue: GlassesManager.shared)
+        self._conversationManager = StateObject(wrappedValue: ConversationManager.shared)
+        
+        print("[OpenVisionApp] Initialized and Managers ready")
     }
 
     // MARK: - Body

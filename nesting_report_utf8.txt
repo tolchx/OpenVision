@@ -1,0 +1,58 @@
+﻿Final semantic depth: 0
+22 (1 -> 1):     @StateObject private var voiceCommandService = VoiceCommandService.shared
+23 (1 -> 1):     @StateObject private var geminiVision = GeminiVisionService.shared
+24 (1 -> 1):     @StateObject private var geminiLive = GeminiLiveService.shared
+25 (1 -> 1):     @StateObject private var ttsService = TTSService.shared
+26 (1 -> 1):     @StateObject private var soundService = SoundService.shared
+27 (1 -> 1):     @StateObject private var audioCapture = AudioCaptureService()
+28 (1 -> 1):     @StateObject private var audioPlayback = AudioPlaybackService()
+29 (1 -> 1):     @StateObject private var notificationManager = NotificationManager.shared
+30 (1 -> 1):     @ObservedObject private var networkMonitor = NetworkMonitor.shared
+34 (1 -> 1):     @State private var isSessionActive = false
+35 (1 -> 1):     @State private var agentState: AgentState = .idle
+36 (1 -> 1):     @State private var userTranscript = ""
+37 (1 -> 1):     @State private var aiTranscript = ""
+38 (1 -> 1):     @State private var currentToolName: String?
+39 (1 -> 1):     @State private var errorMessage: String?
+40 (1 -> 1):     @State private var audioLevel: CGFloat = 0
+41 (1 -> 1):     @State private var hasRequestedSpeechAuth = false
+44 (1 -> 1):     @State private var isLiveVideoMode = false
+47 (1 -> 1):     @State private var describeSceneTimer: Timer?
+49 (1 -> 1):     @State private var lastInteractionTime = Date()
+52 (1 -> 1):     @State private var isVoiceReady = false
+56 (1 -> 1):     @State private var inputText = ""
+59 (1 -> 1):     @State private var selectedPhotoItem: PhotosPickerItem?
+60 (1 -> 1):     @State private var selectedPhotoData: Data?
+65 (1 -> 1):     @State private var ocrContext: String? = nil
+68 (1 -> 1):     @State private var hasPlayedResponseHaptic = false
+249 (1 -> 2):     private var topBar: some View {
+343 (1 -> 2):     private var chatHistory: some View {
+393 (1 -> 2):     private var textInputBox: some View {
+517 (1 -> 2):     private func submitTextCommand() {
+560 (1 -> 2):     private func errorOverlay(_ message: String) -> some View {
+601 (1 -> 2):     private func persistCompletedTurn() {
+627 (1 -> 1):     private static let describeSceneSilenceThreshold: TimeInterval = 30
+630 (1 -> 2):     private func startDescribeSceneTimer() {
+662 (1 -> 2):     private func stopDescribeSceneTimer() {
+669 (1 -> 2):     private func toggleSession() {
+677 (1 -> 2):     private func startSession() {
+780 (1 -> 2):     private func configureAudioForGlasses() {
+818 (1 -> 2):     private func stopSession() {
+864 (1 -> 2):     private func capturePhoto() {
+878 (1 -> 2):     private func requestSpeechAuthorization() async {
+893 (1 -> 2):     private func setupVoiceCommandService() {
+991 (1 -> 2):     private func playResponseHapticIfNeeded() {
+1001 (1 -> 2):     private func setupAIServiceCallbacks() {
+1112 (1 -> 2):     private func startWakeWordListening() {
+1130 (1 -> 2):     private func sendCommand(_ command: String, imageData: Data? = nil) async {
+1265 (1 -> 2):     private func startLiveVideoMode() async {
+1373 (1 -> 2):     private func stopLiveVideoMode() async {
+1424 (1 -> 2):     private func setupGeminiLiveCallbacks() {
+1476 (1 -> 2):     private func captureAndSendPhoto(withPrompt prompt: String) async {
+1552 (1 -> 2):     private func capturePhotoFromGlasses() async -> Data? {
+1575 (1 -> 2):     private func handleScreenshotTaken() {
+1625 (1 -> 1):     @State private var videoFrameCount: Int = 0
+1628 (1 -> 2):     private func setupGlassesCallbacks() {
+1658 (1 -> 2):     private func speakResponse(_ text: String) {
+1684 (1 -> 2):     private func handleTakePhotoTool(completion: @escaping (String) -> Void) async {
+1732 (1 -> 2):     private func handleDescribeSceneTool(args: [String: Any], completion: @escaping (String) -> Void) async {

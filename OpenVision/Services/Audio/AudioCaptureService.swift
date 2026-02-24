@@ -4,7 +4,7 @@
 @preconcurrency import AVFoundation
 
 /// Captures audio from microphone
-@MainActor
+/// Captures audio from microphone
 final class AudioCaptureService: ObservableObject {
     // MARK: - Published State
 
@@ -20,6 +20,11 @@ final class AudioCaptureService: ObservableObject {
 
     private var audioEngine: AVAudioEngine?
     private var inputNode: AVAudioInputNode?
+
+    // MARK: - Threading
+    
+    /// Dedicated queue for audio processing to avoid blocking MainActor (tap thread)
+    private let processingQueue = DispatchQueue(label: "com.openvision.audio.processing", qos: .userInitiated)
 
     // MARK: - Audio Format
 
@@ -45,14 +50,11 @@ final class AudioCaptureService: ObservableObject {
 
     /// Start capturing audio
     func startCapture() throws {
+        // Use MainActor for Published property checks if needed, but here we can just check local state
         guard !isCapturing else { return }
 
-        audioEngine = AVAudioEngine()
-
-        guard let engine = audioEngine else {
-            throw AudioCaptureError.engineCreationFailed
-        }
-
+        let engine = AVAudioEngine()
+        audioEngine = engine
         inputNode = engine.inputNode
 
         guard let inputNode = inputNode else {
@@ -67,6 +69,7 @@ final class AudioCaptureService: ObservableObject {
         inputNode.installTap(onBus: 0, bufferSize: 1024, format: nativeFormat) { [weak self] buffer, _ in
             self?.processAudioBuffer(buffer, nativeFormat: nativeFormat)
         }
+        
         do {
             try engine.start()
         } catch {
@@ -77,7 +80,10 @@ final class AudioCaptureService: ObservableObject {
             self.inputNode = nil
             throw error
         }
-        isCapturing = true
+        
+        DispatchQueue.main.async {
+            self.isCapturing = true
+        }
         print("[AudioCapture] Started capturing successfully")
     }
 
@@ -93,7 +99,9 @@ final class AudioCaptureService: ObservableObject {
         // Flush remaining buffer
         flushBuffer()
 
-        isCapturing = false
+        DispatchQueue.main.async {
+            self.isCapturing = false
+        }
         print("[AudioCapture] Stopped capturing")
     }
 
@@ -119,74 +127,83 @@ final class AudioCaptureService: ObservableObject {
 
     /// Process audio buffer from tap
     private func processAudioBuffer(_ buffer: AVAudioPCMBuffer, nativeFormat: AVAudioFormat) {
-        // 1. Check if we need to setup/update the converter
-        if currentNativeFormat != nativeFormat {
-            currentNativeFormat = nativeFormat
-            let needsResample = nativeFormat.sampleRate != targetFormat.sampleRate || nativeFormat.channelCount != targetFormat.channelCount
-            if needsResample {
-                audioConverter = AVAudioConverter(from: nativeFormat, to: targetFormat)
+        // Offload to background queue immediately
+        processingQueue.async { [weak self] in
+            guard let self = self else { return }
+            
+            // 1. Check if we need to setup/update the converter
+            if self.currentNativeFormat != nativeFormat {
+                self.currentNativeFormat = nativeFormat
+                let needsResample = nativeFormat.sampleRate != self.targetFormat.sampleRate || nativeFormat.channelCount != self.targetFormat.channelCount
+                if needsResample {
+                    self.audioConverter = AVAudioConverter(from: nativeFormat, to: self.targetFormat)
+                } else {
+                    self.audioConverter = nil
+                }
+            }
+
+            // 2. Resample if needed
+            let bufferToProcess: AVAudioPCMBuffer
+            if let converter = self.audioConverter {
+                guard let resampled = self.convertBuffer(buffer, using: converter, targetFormat: self.targetFormat) else {
+                    print("[AudioCapture] Resample failed")
+                    return
+                }
+                bufferToProcess = resampled
             } else {
-                audioConverter = nil
-            }
-        }
-
-        // 2. Resample if needed
-        let bufferToProcess: AVAudioPCMBuffer
-        if let converter = audioConverter {
-            guard let resampled = convertBuffer(buffer, using: converter, targetFormat: targetFormat) else {
-                print("[AudioCapture] Resample failed")
-                return
-            }
-            bufferToProcess = resampled
-        } else {
-            bufferToProcess = buffer
-        }
-
-        // --- NEW SAFETY CHECK ---
-        // Ensure we actually have frames to process to avoid downstream math crashes
-        guard bufferToProcess.frameLength > 0 else { return }
-        
-        // 3. Compute Audio Level (RMS)
-        let rms = computeRMS(bufferToProcess)
-        Task { @MainActor in
-            self.audioLevel = rms
-        }
-
-        // 4. Convert Float32 to Int16 PCM Data
-        let pcmData = float32BufferToInt16Data(bufferToProcess)
-
-        // 5. Append and Chunk
-        bufferLock.lock()
-        audioBuffer.append(pcmData)
-
-        // Send chunks when buffer is full
-        while audioBuffer.count >= targetBufferSize {
-            let chunk = audioBuffer.prefix(targetBufferSize)
-            audioBuffer.removeFirst(targetBufferSize)
-            bufferLock.unlock()
-
-            Task { @MainActor in
-                self.onAudioCaptured?(Data(chunk))
+                bufferToProcess = buffer
             }
 
-            bufferLock.lock()
+            // --- NEW SAFETY CHECK ---
+            // Ensure we actually have frames to process to avoid downstream math crashes
+            guard bufferToProcess.frameLength > 0 else { return }
+            
+            // 3. Compute Audio Level (RMS)
+            let rms = self.computeRMS(bufferToProcess)
+            DispatchQueue.main.async {
+                self.audioLevel = rms
+            }
+
+            // 4. Convert Float32 to Int16 PCM Data
+            let pcmData = self.float32BufferToInt16Data(bufferToProcess)
+
+            // 5. Append and Chunk
+            self.bufferLock.lock()
+            self.audioBuffer.append(pcmData)
+
+            // Send chunks when buffer is full
+            while self.audioBuffer.count >= self.targetBufferSize {
+                let chunk = self.audioBuffer.prefix(self.targetBufferSize)
+                self.audioBuffer.removeFirst(self.targetBufferSize)
+                self.bufferLock.unlock()
+
+                let dataChunk = Data(chunk)
+                DispatchQueue.main.async {
+                    self.onAudioCaptured?(dataChunk)
+                }
+
+                self.bufferLock.lock()
+            }
+            self.bufferLock.unlock()
         }
-        bufferLock.unlock()
     }
 
     /// Flush remaining audio buffer
     private func flushBuffer() {
-        bufferLock.lock()
-        if !audioBuffer.isEmpty {
-            let remaining = audioBuffer
-            audioBuffer.removeAll()
-            bufferLock.unlock()
+        processingQueue.async { [weak self] in
+            guard let self = self else { return }
+            self.bufferLock.lock()
+            if !self.audioBuffer.isEmpty {
+                let remaining = self.audioBuffer
+                self.audioBuffer.removeAll()
+                self.bufferLock.unlock()
 
-            Task { @MainActor in
-                self.onAudioCaptured?(remaining)
+                DispatchQueue.main.async {
+                    self.onAudioCaptured?(remaining)
+                }
+            } else {
+                self.bufferLock.unlock()
             }
-        } else {
-            bufferLock.unlock()
         }
     }
 
